@@ -14,6 +14,17 @@ private/
 # 用户教材 PDF 与商业版权材料
 *.pdf
 
+# SQLite 伴生文件（WAL/SHM/journal 含完整数据，须一并忽略）
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
+
 # StudyPack / StudyEvents 学习活动数据
 StudyPack*.json
 StudyEvents*.json
@@ -28,10 +39,15 @@ backups/
 # ---- 密钥与 API Key ----
 .env
 .env.*
+.envrc
 *.pem
 *.key
 *.p12
 *.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
 api-keys/
 credentials/
 
