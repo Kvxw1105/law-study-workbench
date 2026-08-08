@@ -1,0 +1,62 @@
+# ============================================================
+# law-study-workbench — 公开仓库忽略规则
+# 严禁将真实用户数据 / 版权材料 / 密钥提交到公开仓库
+# ============================================================
+
+# ---- 用户学习数据（严禁进入公开仓库）----
+data/
+*.db
+*.sqlite
+*.sqlite3
+secrets/
+private/
+
+# 用户教材 PDF 与商业版权材料
+*.pdf
+
+# StudyPack / StudyEvents 学习活动数据
+StudyPack*.json
+StudyEvents*.json
+
+# 本地备份 / 交接材料 / 归档
+*.zip
+*.bak
+*.backup
+*handoff*
+backups/
+
+# ---- 密钥与 API Key ----
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+api-keys/
+credentials/
+
+# ---- 依赖与构建产物 ----
+node_modules/
+.venv/
+venv/
+__pycache__/
+dist/
+build/
+.cache/
+
+# ---- 本机临时目录与缓存 ----
+tmp/
+temp/
+*.log
+*.tmp
+
+# ---- 编辑器 / 系统文件 ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ---- 本机工具目录 ----
+.reasonix/
