@@ -12,8 +12,8 @@ if errorlevel 1 (
   exit /b 1
 )
 
-rem 端口占用检查：已在运行则不重复启动
-netstat -ano | findstr /r ":%PORT% .*LISTENING" >nul 2>nul
+rem 端口占用检查：已在运行则不重复启动（/c: 使整串作为正则，避免空格被当作 OR 分隔）
+netstat -ano | findstr /r /c:":%PORT% .*LISTENING" >nul 2>nul
 if not errorlevel 1 (
   echo [提示] 端口 %PORT% 已有服务在监听，工作台可能已在运行。
   echo 直接打开 %URL%
