@@ -63,16 +63,23 @@ def start_server(home: str) -> subprocess.Popen[str]:
 
 
 def stop_server(process: subprocess.Popen[str]) -> None:
+    # Distinguish "we deliberately terminated a still-running server" from
+    # "the server already crashed before terminate()".
+    was_running = process.poll() is None
     process.terminate()
     try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait(timeout=5)
-    # POSIX: SIGTERM -> -15; Windows: TerminateProcess -> exit code 1
-    if process.returncode not in (0, -15, 1):
+    rc = process.returncode
+    # Only when the process was still alive before our terminate() may we
+    # accept Windows TerminateProcess exit code 1 (POSIX SIGTERM -> -15).
+    # A server that already exited on its own must never be treated as a
+    # clean stop, regardless of its exit code.
+    if rc not in ((0, -15, 1) if was_running else (0, -15)):
         output = process.stdout.read() if process.stdout else ""
-        raise RuntimeError(f"server exited unexpectedly: {process.returncode}\n{output}")
+        raise RuntimeError(f"server exited unexpectedly: {rc}\n{output}")
 
 
 def seed(client: httpx.Client) -> tuple[str, str]:

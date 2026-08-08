@@ -2,10 +2,19 @@
 
 更新时间：2026-08-08
 模式：IMPLEMENT → REVIEW → HANDOFF
-工程状态：LOCALLY_VERIFIED / NO_GIT_METADATA / REAL_USER_ALPHA_PENDING
+工程状态：LOCALLY_VERIFIED / COMMITTED / PUSHED / PR_OPEN / REAL_USER_ALPHA_PENDING
 产品版本：0.8.0
 数据库 Schema：4
 方法包：law_full_recall_v1@0.3.0
+
+## Git 事实（与仓库一致）
+
+- v0.8.0 基线 commit：`6c784d8`（chore: import verified v0.8.0 alpha baseline）
+- 分支：`alpha/import-v0.8.0-ui-v2.1`（已 push）
+- PR：Draft PR #2（base `main`），尚未 merge；`main` 未被直接修改
+- CI：无 GitHub CI，不得声明 CI_PASSED
+- Release：无；真实用户 Alpha 验收仍 pending（REAL_USER_ALPHA_PENDING）
+- 证据层级：只能声明有证据的层级 `EDITED / LOCALLY_VERIFIED / COMMITTED / PUSHED / PR_UPDATED / CI_PASSED / RELEASED`
 
 ## 当前可信定位
 
