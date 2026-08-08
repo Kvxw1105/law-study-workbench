@@ -35,6 +35,10 @@ StudyEvents*.json
 *.backup
 *handoff*
 backups/
+rollback-*/
+
+# 产物与截图（公开仓库不保存，除非逐项验证为合成且必要）
+artifacts/
 
 # ---- 密钥与 API Key ----
 .env
@@ -56,6 +60,8 @@ node_modules/
 .venv/
 venv/
 __pycache__/
+.pytest_cache/
+*.pyc
 dist/
 build/
 .cache/

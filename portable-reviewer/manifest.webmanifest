@@ -1,0 +1,12 @@
+{
+  "name": "随身复习器",
+  "short_name": "随身复习",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0c100f",
+  "theme_color": "#111715",
+  "lang": "zh-CN",
+  "icons": [
+    {"src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+  ]
+}

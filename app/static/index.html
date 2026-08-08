@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark" data-density="comfortable" data-motion="full" data-art-direction="jinshi-editorial-v3">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d1110">
+  <meta name="color-scheme" content="dark light">
+  <title>法学语义学习工作台</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#content">跳到主要内容</a>
+
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="主导航">
+      <div class="sidebar-scroll">
+        <div class="brand-block">
+          <div class="brand-mark" aria-hidden="true">律</div>
+          <div class="brand-copy">
+            <div class="brand-title">法学语义学习工作台</div>
+            <div class="brand-subtitle">LOCAL-FIRST STUDY ENGINE</div>
+          </div>
+        </div>
+
+        <section class="sidebar-pulse" id="sidebarPulse" aria-label="今日学习概况">
+          <div class="sidebar-pulse-head">
+            <span>今日轨道</span>
+            <span class="pulse-mini">读取中</span>
+          </div>
+          <div class="sidebar-pulse-value">—</div>
+          <div class="sidebar-pulse-caption">正在恢复本地学习状态</div>
+          <div class="mini-progress" aria-hidden="true"><span style="width: 0%"></span></div>
+        </section>
+
+        <div class="nav-group">
+          <div class="nav-group-label">学习空间</div>
+          <nav class="nav-list">
+            <button class="nav-item is-active" data-view="today" data-short-label="今日" aria-current="page">
+              <span class="nav-icon" aria-hidden="true">今</span>
+              <span class="nav-copy"><strong>今日学习</strong><small>从最值得做的任务开始</small></span>
+            </button>
+            <button class="nav-item" data-view="library" data-short-label="教材">
+              <span class="nav-icon" aria-hidden="true">书</span>
+              <span class="nav-copy"><strong>本地教材库</strong><small>导入、解析、管理来源</small></span>
+            </button>
+            <button class="nav-item" data-view="study" data-short-label="闭卷">
+              <span class="nav-icon" aria-hidden="true">答</span>
+              <span class="nav-copy"><strong>闭卷学习</strong><small>完整提取与来源对照</small></span>
+            </button>
+            <button class="nav-item" data-view="retrieval" data-short-label="卡片">
+              <span class="nav-icon" aria-hidden="true">卡</span>
+              <span class="nav-copy"><strong>挖空与闪卡</strong><small>短提取与复测调度</small></span>
+            </button>
+            <button class="nav-item" data-view="model" data-short-label="证据">
+              <span class="nav-icon" aria-hidden="true">证</span>
+              <span class="nav-copy"><strong>学习证据</strong><small>查看证据、错误与修复</small></span>
+            </button>
+            <button class="nav-item" data-view="settings" data-short-label="设置">
+              <span class="nav-icon" aria-hidden="true">设</span>
+              <span class="nav-copy"><strong>设置与数据</strong><small>目标、隐私与导出</small></span>
+            </button>
+          </nav>
+        </div>
+      </div>
+
+      <div class="sidebar-foot">
+        <div class="privacy-badge">
+          <span class="pulse-dot" aria-hidden="true"></span>
+          <span id="privacyMode">教材与学习记录仅存本机</span>
+        </div>
+        <p>云端模型只接收当前任务需要的最小上下文。</p>
+      </div>
+    </aside>
+
+    <div class="workspace-shell">
+      <header class="topbar">
+        <div class="topbar-main">
+          <div class="eyebrow" id="viewEyebrow">学习任务</div>
+          <h1 id="viewTitle">今日学习</h1>
+          <p class="topbar-description" id="viewDescription">先处理今天真正该做的任务，再回到教材与卡片。</p>
+        </div>
+        <div class="topbar-side">
+          <div class="provider-chip" id="providerChip">正在读取模型状态</div>
+          <button class="icon-button" id="themeToggle" type="button" title="切换明暗主题" aria-label="切换明暗主题"><span aria-hidden="true">◐</span></button>
+          <button class="icon-button" id="shortcutsButton" type="button" title="查看快捷键" aria-label="查看快捷键"><span aria-hidden="true">⌘</span></button>
+          <button class="icon-button" id="refreshButton" type="button" title="刷新本地状态" aria-label="刷新本地状态"><span aria-hidden="true">↻</span></button>
+        </div>
+      </header>
+
+      <main id="content" class="content" tabindex="-1" aria-live="polite">
+        <div class="loading-state">
+          <div class="loading-orbit" aria-hidden="true"><span></span></div>
+          <p>正在恢复本地学习状态…</p>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <dialog id="unitDialog" class="app-dialog unit-review-dialog" aria-labelledby="unitDialogTitle">
+    <form id="unitDialogForm" method="dialog" class="dialog-card">
+      <header class="dialog-head">
+        <div>
+          <div class="eyebrow">KNOWLEDGE UNIT REVIEW</div>
+          <h2 id="unitDialogTitle">审核知识单元</h2>
+          <p id="unitDialogDescription">先修正知识边界，再进入闭卷与卡片。结构调整会保留旧证据。</p>
+        </div>
+        <button class="icon-button dialog-close" type="button" data-action="close-unit-dialog" aria-label="关闭">×</button>
+      </header>
+      <div id="unitDialogBody" class="dialog-body"></div>
+      <footer class="dialog-actions unit-dialog-actions">
+        <button class="ghost-button" type="button" data-action="close-unit-dialog">取消</button>
+        <button class="ghost-button" type="button" id="unitDialogSplit">按光标拆分</button>
+        <button class="secondary-button" type="submit" id="unitDialogSave">保存修改</button>
+        <button class="primary-button" type="button" id="unitDialogApprove">保存并确认</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="retrievalDialog" class="app-dialog" aria-labelledby="retrievalDialogTitle">
+    <form id="retrievalDialogForm" method="dialog" class="dialog-card">
+      <header class="dialog-head">
+        <div>
+          <div class="eyebrow">RETRIEVAL ITEM</div>
+          <h2 id="retrievalDialogTitle">建立提取卡片</h2>
+          <p id="retrievalDialogDescription">卡片必须回到教材来源，并独立记录复测状态。</p>
+        </div>
+        <button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">×</button>
+      </header>
+      <div id="retrievalDialogBody" class="dialog-body"></div>
+      <footer class="dialog-actions">
+        <button class="ghost-button" type="button" data-action="close-dialog">取消</button>
+        <button class="primary-button" type="submit" id="retrievalDialogSubmit">保存卡片</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="shortcutsDialog" class="app-dialog compact-dialog" aria-labelledby="shortcutsDialogTitle">
+    <div class="dialog-card">
+      <header class="dialog-head">
+        <div>
+          <div class="eyebrow">KEYBOARD</div>
+          <h2 id="shortcutsDialogTitle">快捷键</h2>
+          <p>只在对应页面生效，输入法组合输入期间不会触发。</p>
+        </div>
+        <button class="icon-button dialog-close" type="button" data-action="close-shortcuts" aria-label="关闭">×</button>
+      </header>
+      <div class="shortcut-grid">
+        <div><kbd>Ctrl / ⌘</kbd><span>+</span><kbd>Enter</kbd><p>提交闭卷回答</p></div>
+        <div><kbd>Ctrl / ⌘</kbd><span>+</span><kbd>S</kbd><p>立即保存草稿</p></div>
+        <div><kbd>Space</kbd><p>闪卡显示答案</p></div>
+        <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd><p>闪卡自评</p></div>
+        <div><kbd>/</kbd><p>聚焦当前页搜索框</p></div>
+        <div><kbd>?</kbd><p>打开快捷键说明</p></div>
+      </div>
+      <footer class="dialog-actions"><button class="primary-button" type="button" data-action="close-shortcuts">知道了</button></footer>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

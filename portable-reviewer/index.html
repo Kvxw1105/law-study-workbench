@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101310">
+  <meta name="color-scheme" content="dark light">
+  <title>随身复习器</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="ambient" aria-hidden="true">
+    <span class="ambient-line ambient-line-a"></span>
+    <span class="ambient-line ambient-line-b"></span>
+  </div>
+
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand-lockup">
+        <span class="brand-mark" aria-hidden="true">学</span>
+        <div>
+          <p class="eyebrow">STUDY PROTOCOL · PORTABLE REVIEWER</p>
+          <h1>随身复习器</h1>
+          <p class="brand-note">把桌面里的学习证据，带到任何短暂空档</p>
+        </div>
+      </div>
+      <div class="status-stack" aria-label="运行状态">
+        <span id="offlineBadge" class="badge badge-live"><i aria-hidden="true"></i>离线可用</span>
+        <span class="version-mark">PORTABLE · 0.2.1 UI</span>
+      </div>
+    </header>
+
+    <section id="importPanel" class="panel intro-panel">
+      <div class="section-heading">
+        <span class="section-index">01</span>
+        <div>
+          <p class="section-label">导入学习包</p>
+          <h2>今天只做一件事：提取</h2>
+        </div>
+      </div>
+
+      <p class="lead">导入桌面工作台生成的 StudyPack。手机端只负责专注训练和记录真实行为，评分、掌握与下一次复习仍由桌面 Runtime 统一裁决。</p>
+
+      <div class="import-zone">
+        <div class="import-zone-copy">
+          <span class="file-glyph" aria-hidden="true">SP</span>
+          <div>
+            <strong>StudyPack</strong>
+            <span>选择 JSON 学习包后即可离线复习</span>
+          </div>
+        </div>
+        <div class="import-actions">
+          <label class="file-button" for="packInput" role="button" tabindex="0"><span aria-hidden="true">＋</span>选择 StudyPack</label>
+          <button id="resumeButton" class="ghost hidden">恢复上次未完成复习</button>
+        </div>
+      </div>
+      <input id="packInput" type="file" accept="application/json,.json" hidden>
+
+      <div class="flow-strip" aria-label="学习同步流程">
+        <div><b>01</b><span>导入</span><small>桌面 StudyPack</small></div>
+        <i aria-hidden="true"></i>
+        <div><b>02</b><span>提取</span><small>闪卡 / 挖空</small></div>
+        <i aria-hidden="true"></i>
+        <div><b>03</b><span>回灌</span><small>StudyEvents</small></div>
+      </div>
+
+      <div class="device-row">
+        <label for="deviceLabel"><span>这台设备的记录名称</span><input id="deviceLabel" value="手机复习器" maxlength="120"></label>
+      </div>
+
+      <div class="trust-note">
+        <span class="trust-mark" aria-hidden="true">✓</span>
+        <p class="fine">StudyPack 会先通过 SHA-256 完整性校验。当前 v0.1 协议只支持闪卡与单空挖空；移动端不直接修改 due_at、streak 或 mastery。</p>
+      </div>
+    </section>
+
+    <section id="sessionPanel" class="panel session-panel hidden" aria-live="polite">
+      <div class="session-head">
+        <div class="session-context">
+          <span id="typeBadge" class="badge badge-type">闪卡</span>
+          <span id="unitTitle" class="muted"></span>
+        </div>
+        <div class="progress-count" aria-label="当前进度">
+          <span>进度</span>
+          <strong id="progressText">0 / 0</strong>
+        </div>
+      </div>
+      <div class="progress" aria-hidden="true"><span id="progressBar"></span></div>
+
+      <div class="session-stage">
+        <aside class="folio-rail" aria-hidden="true">
+          <span>RECALL</span>
+          <i></i>
+          <span>ACTIVE</span>
+        </aside>
+
+        <article class="practice-card">
+          <div class="source-line">
+            <span>来源</span>
+            <p id="sourceMeta" class="source-meta"></p>
+          </div>
+          <h2 id="promptText"></h2>
+
+          <div id="clozeArea" class="answer-input-zone hidden">
+            <label for="clozeInput">你的答案</label>
+            <input id="clozeInput" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="先从记忆里提取，再核对">
+            <button id="clozeCheckButton" class="primary action-primary">核对答案</button>
+          </div>
+
+          <div id="flashArea" class="answer-input-zone hidden">
+            <p class="recall-cue">先在心里完整回答，再揭开答案</p>
+            <button id="revealButton" class="primary action-primary">显示答案</button>
+          </div>
+
+          <div id="answerArea" class="answer-area hidden">
+            <div class="answer-heading">
+              <div>
+                <p class="eyebrow">TARGET ANSWER</p>
+                <h3>目标答案</h3>
+              </div>
+              <span class="answer-seal" aria-hidden="true">核</span>
+            </div>
+            <div id="answerText" class="answer-text"></div>
+            <details>
+              <summary><span>教材来源</span><small>展开原文</small></summary>
+              <p id="sourceExcerpt"></p>
+            </details>
+            <p id="provisionalNote" class="provisional-note"></p>
+
+            <div id="ratingButtons" class="rating-grid hidden" aria-label="闪卡自评">
+              <button data-rating="again" aria-label="忘记"><b>忘记</b><small>尽快重来</small></button>
+              <button data-rating="hard" aria-label="困难"><b>困难</b><small>仍需加固</small></button>
+              <button data-rating="good" aria-label="记得"><b>记得</b><small>正常推进</small></button>
+              <button data-rating="easy" aria-label="轻松"><b>轻松</b><small>稳定提取</small></button>
+            </div>
+            <button id="nextClozeButton" class="primary action-primary hidden">记录并下一题</button>
+          </div>
+        </article>
+      </div>
+
+      <div class="session-actions">
+        <div class="sync-state"><i aria-hidden="true"></i><span id="sessionEventCount">0 条待同步</span></div>
+        <div class="session-action-buttons">
+          <button id="leaveButton" class="ghost">返回导入</button>
+          <button id="exportButton" class="ghost ghost-accent">导出 StudyEvents</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="donePanel" class="panel done-panel hidden">
+      <div class="completion-mark" aria-hidden="true"><span>完</span></div>
+      <p class="eyebrow">SESSION COMPLETE</p>
+      <h2>这一轮已完成</h2>
+      <p id="doneText" class="lead"></p>
+      <div class="done-rule"><span></span><b>学习行为已留在本机</b><span></span></div>
+      <button id="doneExportButton" class="primary action-primary">导出 StudyEvents</button>
+      <button id="restartButton" class="ghost">重新查看本包</button>
+    </section>
+
+    <footer class="footer-note">
+      <span>Study Protocol 0.1</span>
+      <i></i>
+      <span>事件同步 · 桌面裁决</span>
+    </footer>
+  </main>
+  <script src="./app.js" defer></script>
+</body>
+</html>

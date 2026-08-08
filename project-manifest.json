@@ -1,0 +1,124 @@
+{
+  "name": "law-study-workbench",
+  "display_name": "法学语义学习工作台",
+  "version": "0.8.0",
+  "status": "LOCALLY_VERIFIED_REAL_USER_ACCEPTANCE_PENDING",
+  "runtime": {
+    "python": ">=3.11",
+    "server": "FastAPI",
+    "database": "SQLite",
+    "pdf_parser": "PyMuPDF",
+    "frontend": "HTML/CSS/JavaScript",
+    "bind": "127.0.0.1:8765"
+  },
+  "entrypoints": {
+    "windows": "START_WINDOWS.bat",
+    "unix": "START_UNIX.sh",
+    "manual": "python3 -m uvicorn app.asgi:app --host 127.0.0.1 --port 8765"
+  },
+  "data": {
+    "default_home": "data",
+    "environment_override": "LAW_STUDY_HOME",
+    "database": "data/workbench.db",
+    "library": "data/library",
+    "exports": "data/exports",
+    "backups": "data/backups",
+    "schema_version": 4
+  },
+  "verification": {
+    "compile": "python3 -m compileall -q app tests scripts",
+    "javascript": "node --check app/static/app.js",
+    "tests": "pytest -q",
+    "browser": "python3 scripts/browser_smoke.py",
+    "http": "python3 scripts/http_smoke.py",
+    "backup_restore": "python3 scripts/backup_restore_smoke.py",
+    "browser_regression": "python3 scripts/browser_smoke.py",
+    "browser_ui_round2": "python3 scripts/browser_ui_round2.py",
+    "test_count": 44,
+    "browser_real_e2e": "python3 scripts/browser_real_e2e.py",
+    "javascript_portable": "node --check portable-reviewer/app.js && node --check portable-reviewer/sw.js",
+    "browser_ui_v3": "python3 scripts/browser_ui_v3.py",
+    "study_protocol_roundtrip": "python3 scripts/study_protocol_roundtrip_smoke.py",
+    "portable_reviewer": "python3 scripts/portable_reviewer_smoke.py",
+    "study_protocol_browser_roundtrip": "python3 scripts/study_protocol_browser_roundtrip.py"
+  },
+  "protected_paths": [
+    "data/",
+    "rollback-*/"
+  ],
+  "known_gaps": [
+    "OCR",
+    "FTS5 and vector retrieval",
+    "exact paragraph/coordinate source anchors",
+    "high-quality AI-assisted card generation",
+    "semantic law-domain grading and fact-to-element reasoning",
+    "full 259-atom runtime mapping",
+    "FSRS calibration with real study data",
+    "real cloud provider acceptance",
+    "native Windows installer and auto-update",
+    "real Windows scaling, touch and screen-reader acceptance",
+    "large real textbook and long-term user acceptance",
+    "real iOS Safari / Android Chrome StudyPack and StudyEvents file roundtrip acceptance",
+    "portable reviewer Service Worker install and native reload/localStorage recovery acceptance",
+    "cross-device transport, account identity and cloud or LAN sync",
+    "cross-desktop-instance StudyPack trust and event import"
+  ],
+  "capabilities": {
+    "full_recall_method_pack": {
+      "id": "law_full_recall_v1",
+      "version": "0.3.0",
+      "dimensions": 5,
+      "persistence": [
+        "attempts.feedback_json",
+        "study_events"
+      ],
+      "formal_legal_grade": false,
+      "semantic_correctness_verified": false,
+      "evidence_verdict": true,
+      "session_material_snapshot": true
+    },
+    "knowledge_unit_review": {
+      "edit": true,
+      "approve": true,
+      "split": true,
+      "merge_adjacent": true,
+      "history_preserved_by_archiving": true,
+      "evidence_versioning": true,
+      "source_basis_readonly": true
+    },
+    "error_repair_loop": {
+      "states": [
+        "open",
+        "repairing",
+        "resolved"
+      ],
+      "requires_unhinted_retest": true,
+      "manual_resolution": true,
+      "requires_valid_retest_evidence": true
+    },
+    "evidence_integrity": {
+      "schema": 4,
+      "knowledge_unit_versions": true,
+      "session_material_snapshot": true,
+      "attempt_snapshot_binding": true,
+      "review_state_exact_version_binding": true,
+      "hard_conflict_blocks_mastery": true
+    },
+    "portable_study_protocol": {
+      "study_pack_protocol": "study-pack/0.1",
+      "study_events_protocol": "study-events/0.1",
+      "item_types": [
+        "flashcard",
+        "cloze"
+      ],
+      "state_sync": "attempt-events-only",
+      "desktop_authoritative_evaluation": true,
+      "event_idempotency": true,
+      "item_version_hash_binding": true,
+      "pack_identity_binding": true,
+      "offline_static_reviewer": true,
+      "cross_instance_sync": false,
+      "cloud_sync": false
+    }
+  }
+}
