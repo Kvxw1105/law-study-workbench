@@ -90,7 +90,10 @@ def check_node() -> None:
 def check_venv() -> None:
     py = ROOT / ".venv" / "Scripts" / "python.exe"
     if not py.exists():
-        rec("FAIL", "venv", ".venv missing — run START_WINDOWS.bat once or python -m venv .venv")
+        py = ROOT / ".venv" / "bin" / "python"
+    if not py.exists():
+        # A system Python with installed requirements is acceptable in CI/containers.
+        rec("WARN", "venv", ".venv missing — using system Python (recommend START_WINDOWS.bat once on a workstation)")
         return
     out, _ = run([str(py), "--version"], timeout=30)
     rec("PASS", "venv", out)
