@@ -466,9 +466,12 @@ def test_same_bundle_concurrent_import_idempotent(client: TestClient):
 def test_concurrent_distinct_events_both_imported(client: TestClient):
     prepare_items(client, max_per_type=4)
     pack = export_pack(client, mode="all", limit=50)
-    flashcards = [i for i in pack["items"] if i["type"] == "flashcard"][:2]
-    e1 = portable_event(flashcards[0], rating="good")
-    e2 = portable_event(flashcards[1], rating="good")
+    items = pack["items"]
+    flash = next((i for i in items if i["type"] == "flashcard"), None)
+    cloze = next((i for i in items if i["type"] == "cloze"), None)
+    assert flash is not None and cloze is not None, "需要至少一张闪卡与一张挖空卡构造并发事件"
+    e1 = portable_event(flash, rating="good")
+    e2 = portable_event(cloze, response_text=cloze["content"]["answer"])
     outputs = _concurrent_import(client, [bundle(pack, [e1]), bundle(pack, [e2])])
     assert all(o["status"] == 200 for o in outputs)
     attempts = client.get("/api/retrieval/summary").json()["attempts"]

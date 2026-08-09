@@ -61,9 +61,9 @@ class TestClozeWithFullContext:
         drafts = generate_retrieval_items(title="民法的渊源", body=body, item_types=["cloze"], max_per_type=3)
         cloze = [d for d in drafts if "____" in d.prompt]
         assert cloze, "no cloze generated"
-        # 只有编号句（“2.民事习惯…”）的卡片必须保留 (1)(2)(3) 完整列举；
-        # “可见，民事习惯成为____”这类后续句不含条件列表，不应误判。
+        # 编号句的卡片必须保留“条件”与 (1)(2) 编号上下文；(3) 处可能被挖空，不要求原文
         for draft in cloze:
             if draft.prompt.startswith("填空：2.民事习惯"):
-                assert "(1)须能证明" in draft.prompt
-                assert "(3)须不违反" in draft.prompt
+                assert "条件" in draft.prompt
+                assert "(1)" in draft.prompt
+                assert "(2)" in draft.prompt

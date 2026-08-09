@@ -1649,8 +1649,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if existing["item_type"] == "cloze":
             if not final_cloze:
                 raise HTTPException(status_code=422, detail="挖空题必须保留挖空文本")
-            if final_cloze.count("____") != 1:
-                raise HTTPException(status_code=422, detail="挖空题必须且只能包含一个 ____ 空位")
+            if final_cloze.count("____") < 1:
+                raise HTTPException(status_code=422, detail="挖空题必须至少包含一个 ____ 空位")
             if "cloze_text" in changes and "prompt" not in changes:
                 final_prompt = f"填空：{final_cloze}"
                 changes["prompt"] = final_prompt

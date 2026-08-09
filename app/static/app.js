@@ -38,6 +38,7 @@ const state = {
   sourcePaneCollapsed: false,
   dialogContext: null,
   unitDialogContext: null,
+  unitSelection: null,
   draftStatus: "saved",
   portableImportResult: null,
   preferences: loadUiPreferences(),
@@ -165,7 +166,9 @@ async function api(path, options = {}) {
     let detail = `请求失败：${response.status}`;
     try {
       const body = await response.json();
-      detail = body.detail || detail;
+      if (body.detail) {
+        detail = Array.isArray(body.detail) ? body.detail.map((item) => item.msg || JSON.stringify(item)).join("；") : body.detail;
+      }
     } catch (_) {}
     throw new Error(detail);
   }
@@ -1023,8 +1026,8 @@ function renderRetrievalPractice() {
           ${isFlashcard ? `
             ${reveal ? `
               <div class="answer-reveal">
-                <section><span>标准答案</span><div class="retrieval-answer-text">${escapeHtml(reveal.answer)}</div></section>
-                <section class="source-quote"><span>教材来源</span><p>${escapeHtml(reveal.source_excerpt)}</p></section>
+                <section><span>标准答案</span><div class="retrieval-answer-text">${escapeHtml(reveal.answer).split("\x1f").join("<br>")}</div></section>
+                <section class="source-quote"><span>教材来源</span><p>${highlightInExcerpt(reveal.source_excerpt, reveal.answer)}</p></section>
               </div>` : `
               <div class="retrieval-hidden-answer">
                 <div class="recall-pulse" aria-hidden="true"><span></span></div>
@@ -1035,10 +1038,10 @@ function renderRetrievalPractice() {
               </div>`}
           ` : `
             <div class="cloze-answer-area">
-              <label for="clozeResponse">你的答案</label>
-              <input id="clozeResponse" autocomplete="off" placeholder="输入关键词或规则片段后再核对来源" autofocus>
+              <label>你的答案（共 ${(item.prompt.match(/____/g) || []).length || 1} 个空）</label>
+              <div class="cloze-inputs">${Array.from({ length: (item.prompt.match(/____/g) || []).length || 1 }, (_, i) => `<input class="cloze-input" data-cloze-index="${i}" autocomplete="off" placeholder="${i === 0 ? "输入关键词或规则片段" : `第 ${i + 1} 个空`}" ${i === 0 ? "autofocus" : ""}>`).join("")}</div>
               <div class="action-row"><button class="ghost-button" data-action="give-up-cloze">暂时想不起</button><button class="primary-button" data-action="submit-cloze">提交填空</button></div>
-              <small>按 Enter 提交，系统会忽略空格和常见标点。</small>
+              <small>按 Enter 提交，系统会忽略空格和常见标点；多个空按顺序填写。</small>
             </div>`}
         </main>
 
@@ -1083,8 +1086,8 @@ function renderRetrievalResult() {
     ${result.critical_mismatches?.length ? `<section class="notice critical-mismatch"><strong>关键限定冲突</strong><ul>${result.critical_mismatches.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul><p>这类错误会直接进入“立即重做”，不会被字符串相似度当成普通困难。</p></section>` : ""}
 
     <section class="answer-comparison">
-      <article><div class="section-kicker">EXPECTED ANSWER</div><h3>标准答案</h3><p>${escapeHtml(result.expected_answer)}</p></article>
-      <article class="source-answer"><div class="section-kicker">SOURCE</div><h3>教材来源</h3><p><strong>第 ${result.page_start}-${result.page_end} 页</strong><br>${escapeHtml(result.source_excerpt)}</p></article>
+      <article><div class="section-kicker">EXPECTED ANSWER</div><h3>标准答案</h3><p>${escapeHtml(result.expected_answer).split("\x1f").join("<br>")}</p></article>
+      <article class="source-answer"><div class="section-kicker">SOURCE</div><h3>教材来源</h3><p><strong>第 ${result.page_start}-${result.page_end} 页</strong><br>${highlightInExcerpt(result.source_excerpt, result.expected_answer)}</p></article>
     </section>
 
     <section class="review-ticket">
@@ -1416,21 +1419,201 @@ function openUnitDialog(unitId) {
       <div class="field"><label for="unitDialogObjective">学习材质</label><select id="unitDialogObjective">${objectiveTypes.map((item) => `<option value="${item}" ${item === unit.objective_type ? "selected" : ""}>${item}</option>`).join("")}</select></div>
       <div class="field"><label>来源范围</label><div class="field-readonly">第 ${unit.page_start}-${unit.page_end} 页 · 原 PDF 可在教材页打开</div></div>
       <div class="field full-field"><label>教材来源快照（只读）</label><textarea rows="9" readonly aria-readonly="true">${escapeHtml(unit.source_basis_text || "当前单元缺少可验证的来源快照，请回到原 PDF 核对。")}</textarea><small>来源状态：${escapeHtml(unit.source_basis_status || "unknown")} · 这一层不随学习笔记编辑而改变。</small></div>
-      <div class="field full-field"><label for="unitDialogText">学习单元文本（可编辑）</label><textarea id="unitDialogText" rows="16">${escapeHtml(unit.body)}</textarea><small>修改这里会形成新的学习材料版本，当前掌握状态失效、活动卡片进入 stale，并要求重新确认。拆分时把光标放在新单元开始处。</small></div>
+      <div class="field full-field"><label for="unitDialogText">学习单元文本（可编辑）</label><textarea id="unitDialogText" rows="16">${escapeHtml(unit.body)}</textarea><small>修改这里会形成新的学习材料版本，当前掌握状态失效、活动卡片进入 stale，并要求重新确认。拆分时把光标放在新单元开始处。</small>
+        <div class="selection-builder" id="unitSelectionBuilder" hidden>
+          <div class="selection-head"><strong>划选建卡</strong><span>在正文中划选一段文字（2–80 字），即可直接建立挖空或闪卡，不修改单元正文</span></div>
+          <div class="selection-preview" id="unitSelectionPreview"></div>
+          <div class="selection-actions">
+            <label class="selection-template-label" for="unitFlashTemplate">闪卡提问方式</label>
+            <select id="unitFlashTemplate">
+              <option value="recall">用自己的话复述</option>
+              <option value="define">什么是{主题}？</option>
+              <option value="require">的构成要件有哪些？</option>
+              <option value="condition">的适用条件是什么？</option>
+              <option value="classify">分为哪几类？</option>
+              <option value="distinguish">与相近概念有何区别？</option>
+              <option value="exception">的例外或限制情形有哪些？</option>
+              <option value="basis">的法律依据是什么？</option>
+              <option value="meaning">的意义是什么？</option>
+            </select>
+            <button type="button" class="secondary-button small-button" data-action="selection-cloze">挖空</button>
+            <button type="button" class="secondary-button small-button" data-action="selection-flashcard">闪卡</button>
+            <button type="button" class="ghost-button small-button" data-action="selection-clear">清除</button>
+          </div>
+          <small>进阶：在正文里用 <code>==内容==</code> 标记多个空，保存时自动生成一张多空挖空卡，标记随后自动清除。</small>
+        </div>
+      </div>
     </div>
     <div class="notice warn"><strong>证据保护</strong>：教材来源快照保持只读；学习文本编辑只产生新版本。拆分/合并会归档旧单元并新建单元，历史闭卷和卡片作答继续指向当时版本。</div>`;
   if (typeof dialog.showModal === "function") dialog.showModal();
   else dialog.setAttribute("open", "");
   requestAnimationFrame(() => $("#unitDialogTitleInput")?.focus());
+  bindUnitSelection();
+  $("#unitDialogText")?.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      event.preventDefault();
+      saveUnitDialog();
+    }
+  });
+  document.querySelector('[data-action="selection-cloze"]')?.addEventListener("click", selectionBuildCloze);
+  document.querySelector('[data-action="selection-flashcard"]')?.addEventListener("click", selectionBuildFlashcard);
+  document.querySelector('[data-action="selection-clear"]')?.addEventListener("click", hideUnitSelection);
+}
+
+function bindUnitSelection() {
+  const area = $("#unitDialogText");
+  const builder = $("#unitSelectionBuilder");
+  if (!area || !builder) return;
+  const update = () => {
+    if (document.activeElement !== area) {
+      builder.hidden = true;
+      state.unitSelection = null;
+      return;
+    }
+    const start = area.selectionStart ?? 0;
+    const end = area.selectionEnd ?? 0;
+    if (start === end) {
+      builder.hidden = true;
+      state.unitSelection = null;
+      return;
+    }
+    const selected = area.value.slice(start, end).replace(/\s+/g, " ").trim();
+    if (selected.length < 2 || selected.length > 80) {
+      builder.hidden = true;
+      state.unitSelection = null;
+      return;
+    }
+    state.unitSelection = { start, end, text: selected };
+    const preview = $("#unitSelectionPreview");
+    if (preview) preview.textContent = `已划选：…${selected.slice(0, 64)}${selected.length > 64 ? "…" : ""}…`;
+    builder.hidden = false;
+  };
+  ["mouseup", "keyup"].forEach((eventName) => area.addEventListener(eventName, () => setTimeout(update, 0)));
+}
+
+function buildSelectionContext(body, selected) {
+  const index = body.indexOf(selected);
+  if (index < 0) return { text: selected };
+  const window = 90;
+  const start = Math.max(0, index - window);
+  const end = Math.min(body.length, index + selected.length + window);
+  const prefix = start > 0 ? "……" : "";
+  const suffix = end < body.length ? "……" : "";
+  return { text: prefix + body.slice(start, end).replace(/\r/g, "").trim() + suffix };
+}
+
+function hideUnitSelection() {
+  state.unitSelection = null;
+  const builder = $("#unitSelectionBuilder");
+  if (builder) builder.hidden = true;
+}
+
+function refreshRetrievalAfterCreate() {
+  if (state.view === "retrieval") {
+    loadRetrievalSummary();
+    renderRetrieval();
+  }
+}
+
+async function selectionBuildCloze() {
+  const selection = state.unitSelection;
+  const unitId = state.unitDialogContext?.unitId;
+  if (!selection || !unitId) return toast("请先在正文中划选一段文字", true);
+  const unit = state.units.find((candidate) => candidate.id === unitId);
+  const context = buildSelectionContext(unit?.body || "", selection.text);
+  const clozeText = context.text.replace(selection.text, "____");
+  if (clozeText === context.text) return toast("未能在教材正文中定位到该片段", true);
+  try {
+    await api(`/api/units/${unitId}/retrieval-items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_type: "cloze", prompt: clozeText, answer: selection.text, cloze_text: clozeText, source_excerpt: context.text }),
+    });
+    toast("已建立挖空卡（来源保留上下文）");
+    hideUnitSelection();
+    refreshRetrievalAfterCreate();
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+const UNIT_FLASHCARD_TEMPLATES = {
+  recall: (topic) => `用自己的话复述：${topic}（注意规则、条件与例外）`,
+  define: (topic) => `什么是${topic}？`,
+  require: (topic) => `${topic}的构成要件有哪些？`,
+  condition: (topic) => `${topic}的适用条件是什么？`,
+  classify: (topic) => `${topic}分为哪几类？`,
+  distinguish: (topic) => `${topic}与相近概念有何区别？`,
+  exception: (topic) => `${topic}的例外或限制情形有哪些？`,
+  basis: (topic) => `${topic}的法律依据是什么？`,
+  meaning: (topic) => `${topic}的意义是什么？`,
+};
+
+async function selectionBuildFlashcard() {
+  const selection = state.unitSelection;
+  const unitId = state.unitDialogContext?.unitId;
+  if (!selection || !unitId) return toast("请先在正文中划选一段文字", true);
+  const unit = state.units.find((candidate) => candidate.id === unitId);
+  const context = buildSelectionContext(unit?.body || "", selection.text);
+  const template = $("#unitFlashTemplate")?.value || "recall";
+  const formatter = UNIT_FLASHCARD_TEMPLATES[template] || UNIT_FLASHCARD_TEMPLATES.recall;
+  const topic = selection.text.length > 16 ? `${selection.text.slice(0, 16)}…` : selection.text;
+  try {
+    await api(`/api/units/${unitId}/retrieval-items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_type: "flashcard", prompt: formatter(topic), answer: selection.text, source_excerpt: context.text }),
+    });
+    toast("已建立闪卡");
+    hideUnitSelection();
+    refreshRetrievalAfterCreate();
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+function highlightInExcerpt(excerpt, answer) {
+  if (!excerpt) return "";
+  let html = escapeHtml(excerpt);
+  if (!answer) return html;
+  for (const part of answer.split("\x1f")) {
+    const escaped = escapeHtml(part.trim());
+    if (escaped && html.includes(escaped)) {
+      html = html.split(escaped).join(`<mark class="excerpt-mark">${escaped}</mark>`);
+    }
+  }
+  return html;
 }
 
 async function saveUnitDialog({ approve = false } = {}) {
   const unitId = state.unitDialogContext?.unitId;
   if (!unitId) return;
   const title = $("#unitDialogTitleInput")?.value.trim() || "";
-  const body = $("#unitDialogText")?.value.trim() || "";
+  let body = $("#unitDialogText")?.value.trim() || "";
   const objectiveType = $("#unitDialogObjective")?.value || "综合型";
   if (!title || body.length < 20) return toast("标题不能为空，正文至少保留 20 个字符", true);
+  // ==内容== 标记 → 生成一张多空挖空卡（取首个含标记的段落，最多 4 空），随后清除标记
+  const markerParagraph = body.split(/\n\s*\n/).find((para) => para.includes("==")) || "";
+  const markers = [...markerParagraph.matchAll(/==([^=]{1,40}?)==/g)]
+    .map((match) => match[1].replace(/\s+/g, " ").trim())
+    .filter((text) => text.length >= 2)
+    .slice(0, 4);
+  if (markers.length) {
+    const unitId = state.unitDialogContext?.unitId;
+    const clozeText = markerParagraph.replace(/==([^=]{1,40}?)==/g, "____");
+    try {
+      await api(`/api/units/${unitId}/retrieval-items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item_type: "cloze", prompt: clozeText, answer: markers.join("\x1f"), cloze_text: clozeText, source_excerpt: markerParagraph }),
+      });
+      toast(`已从 ==标记== 生成 ${markers.length} 空挖空卡`);
+      refreshRetrievalAfterCreate();
+    } catch (error) {
+      toast(error.message, true);
+    }
+    body = body.replace(/==([^=]{1,40}?)==/g, "$1");
+  }
   try {
     const currentUnit = state.units.find((item) => item.id === unitId);
     const bodyChanged = Boolean(currentUnit && currentUnit.body !== body);
@@ -1805,16 +1988,20 @@ function bindRetrievalActions() {
   document.querySelector('[data-action="reveal-retrieval"]')?.addEventListener("click", revealRetrieval);
   document.querySelectorAll('[data-action="rate-flashcard"]').forEach((button) => button.addEventListener("click", () => submitRetrievalAttempt({ rating: button.dataset.rating })));
   document.querySelector('[data-action="submit-cloze"]')?.addEventListener("click", () => {
-    const response = $("#clozeResponse")?.value.trim() || "";
-    if (!response) return toast("请先填写挖空答案", true);
-    submitRetrievalAttempt({ responseText: response });
+    const inputs = Array.from(document.querySelectorAll(".cloze-input"));
+    const responses = inputs.map((input) => input.value.trim()).filter(Boolean);
+    if (!responses.length) return toast("请先填写挖空答案", true);
+    submitRetrievalAttempt({ responseText: responses.join("\x1f") });
   });
   document.querySelector('[data-action="give-up-cloze"]')?.addEventListener("click", () => submitRetrievalAttempt({ responseText: "（未能作答）" }));
-  $("#clozeResponse")?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !event.isComposing) {
-      event.preventDefault();
-      document.querySelector('[data-action="submit-cloze"]')?.click();
-    }
+  document.querySelectorAll(".cloze-input").forEach((input, index, all) => {
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.isComposing) {
+        event.preventDefault();
+        if (index < all.length - 1) all[index + 1].focus();
+        else document.querySelector('[data-action="submit-cloze"]')?.click();
+      }
+    });
   });
   document.querySelector('[data-action="next-retrieval"]')?.addEventListener("click", nextRetrieval);
   document.querySelectorAll('[data-action="exit-retrieval"]').forEach((button) => button.addEventListener("click", exitRetrieval));

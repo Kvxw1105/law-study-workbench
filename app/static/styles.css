@@ -2018,3 +2018,41 @@ html[data-density="compact"] .section { margin-top: 22px; }
 .portable-import-receipt > span { color: var(--text-secondary); }
 .portable-import-receipt details { margin-top: 4px; }
 .portable-import-receipt ul { margin: 8px 0 0; padding-left: 18px; color: var(--text-secondary); }
+
+/* ---- 划选建卡（单元审核对话框） ---- */
+.selection-builder {
+  margin-top: 10px;
+  border: 1px dashed var(--line-2);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--paper-strong);
+}
+.selection-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.selection-head strong { font-size: 14px; }
+.selection-head span { font-size: 12px; opacity: .72; }
+.selection-preview {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-1);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.selection-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.selection-template-label { font-size: 12px; opacity: .75; }
+.selection-actions select { max-width: 260px; }
+.selection-builder > small { display: block; margin-top: 8px; opacity: .72; }
+.selection-builder code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+
+/* ---- 多空挖空输入 ---- */
+.cloze-inputs { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.cloze-inputs input { width: 100%; }
+
+/* ---- 教材来源高亮 ---- */
+mark.excerpt-mark {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: inherit;
+  padding: 0 2px;
+  border-radius: 3px;
+  border-bottom: 2px solid var(--accent);
+}

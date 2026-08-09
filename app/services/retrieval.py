@@ -135,17 +135,34 @@ def important_sentences(text: str, limit: int = 5) -> list[str]:
     return [sentences[index] for index in selected_indexes]
 
 
+def _flashcard_topic(sentence: str) -> str | None:
+    """从句子开头提取一个可作为提问主题的短语（2–16 字）。"""
+    match = re.match(r"^([\u4e00-\u9fffA-Za-z0-9]{2,16}?)(?:是|指|即|包括|分为|应当|必须|不得|须|与|同|对|在|于|作为|属于|具有|可以|需要|只要|只有|当|除|依|根|按|就|从|以|由|而|并|也|都|则|还)", sentence)
+    if match:
+        return match.group(1)
+    first = re.match(r"^([\u4e00-\u9fffA-Za-z0-9]{2,16}?)[，,：:。；;]", sentence)
+    if first:
+        return first.group(1)
+    return None
+
+
 def _flashcard_prompt(title: str, sentence: str, index: int) -> str:
-    chinese_patterns = [
-        (r"^(.{2,24}?)(?:是指|系指)(.+)$", lambda topic: f"什么是{topic}？"),
-        (r"^(.{2,24}?)(?:包括|应当具备|须具备|必须具备)(.+)$", lambda topic: f"根据教材，{topic}包括哪些核心内容？"),
+    # 9 类提问模板：先按信号词匹配提问角度，再提取主题。
+    # 兜底不把原文贴进 prompt（避免“背课文”），只问主题。
+    topic = _flashcard_topic(sentence) or title.strip(" ：:、。") or "本部分内容"
+    templates: list[tuple[re.Pattern, Callable[[str], str]]] = [
+        (re.compile(r"是指|系指|即|定义为|叫做"), lambda t: f"什么是{t}？"),
+        (re.compile(r"要件|应当具备|须具备|必须具备|构成条件"), lambda t: f"{t}的构成要件有哪些？"),
+        (re.compile(r"条件|前提|方可|才能|须|必须|应当"), lambda t: f"{t}的适用条件是什么？"),
+        (re.compile(r"分为|包括|种类|类型|分类|有以下几"), lambda t: f"{t}分为哪几类？"),
+        (re.compile(r"区别于|不同于|与[^，。]{1,12}不同|差别|差异"), lambda t: f"{t}与相近概念有何区别？"),
+        (re.compile(r"例外|除外|但书|不得|禁止"), lambda t: f"{t}的例外或限制情形有哪些？"),
+        (re.compile(r"依据|根据|依照|规定|法条"), lambda t: f"{t}的法律依据是什么？"),
+        (re.compile(r"意义|作用|价值|目的|重要性"), lambda t: f"{t}的意义是什么？"),
     ]
-    for pattern, formatter in chinese_patterns:
-        match = re.match(pattern, sentence)
-        if match:
-            topic = match.group(1).strip("，。：:；;、 ")
-            if 2 <= len(topic) <= 24:
-                return formatter(topic)
+    for pattern, formatter in templates:
+        if pattern.search(sentence):
+            return formatter(topic)
 
     english = re.match(
         r"^(.{3,60}?)\s+(requires|includes|means|must|shall|may)\s+(.+)$",
@@ -157,9 +174,7 @@ def _flashcard_prompt(title: str, sentence: str, index: int) -> str:
         verb = english.group(2).lower()
         return f"According to the source, what does {subject} {verb}?"
 
-    preview = sentence[:22].rstrip("，,。.;；:： ")
-    suffix = "……" if len(sentence) > len(preview) else ""
-    return f"请完整说明「{title}」中的规则：{preview}{suffix}"
+    return f"用自己的话复述：{topic}（注意规则、条件与例外）"
 
 
 def _candidate_quoted(sentence: str) -> str | None:
@@ -252,6 +267,99 @@ def find_cloze_span(sentence: str, title: str) -> str | None:
     return _fallback_english(sentence)
 
 
+# 多空答案分隔符：与 content_hash payload 分隔符一致，保持协议自洽。
+ANSWER_SEP = "\x1f"
+
+
+def find_cloze_spans(sentence: str, title: str, max_spans: int = 3) -> list[str]:
+    """多空挖空候选：收集引号内容、章节标题、冒号/判定词后短语、法律术语，
+    去重、去包含、优先判定词短语，最多 max_spans 个。"""
+    candidates: list[str] = []
+    quoted = re.findall(r"[“\"'『]([^”\"'』]{2,24})[”\"'』]", sentence)
+    candidates.extend(quoted)
+    clean_title = title.strip(" ：:、。")
+    if 2 <= len(clean_title) <= 24 and clean_title in sentence:
+        candidates.append(clean_title)
+    marker_patterns = [
+        r"[:：]\s*([^，。；:：]{2,32})",
+        r"(?:为|是)\s*([^，。；:：]{2,20})",
+        r"(?:是指|系指|包括|条件(?:是|为)|要件(?:是|为)|应当具备|须具备)\s*([^，。；:：]{2,28})",
+        r"(?:应当|必须|不得|可以|有权|无权)\s*([^，。；:：]{2,22})",
+    ]
+    generic = {
+        "以下条件", "下列条件", "具备以下条件", "具备下列条件", "有关规定", "法律规定",
+        "依法处理", "相应责任", "相关责任", "下列情形", "以下情形",
+    }
+    for pattern in marker_patterns:
+        for match in re.finditer(pattern, sentence):
+            candidate = match.group(1).strip(" ，,。.;；:：")
+            if 2 <= len(candidate) <= 10 and candidate not in generic:
+                candidates.append(candidate)
+    legal = re.findall(
+        r"[\u4e00-\u9fff]{2,12}(?:权|义务|责任|行为|制度|原则|要件|条件|效力|期限|期间|合同|主体|客体|关系|标准|时点|程序|救济)(?![\u4e00-\u9fff])",
+        sentence,
+    )
+    # 排除“权人/权利人”处的半截截断（如“物权是权”），以及含判定虚词的碎片。
+    candidates.extend(
+        candidate
+        for candidate in legal
+        if len(candidate) <= 10 and not re.search(r"[是为与的之]", candidate)
+    )
+    # fallback 的“句尾 10 字”截取会把词切半（如“不动产以登记为生效要件”→
+    # “动产以登记为生效要件”），语义不可靠：只在没有任何结构化候选时兜底。
+    seen: list[str] = []
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        if any(candidate in other or other in candidate for other in seen):
+            continue
+        seen.append(candidate)
+    if not seen:
+        fallback = _fallback_chinese(sentence)
+        if fallback:
+            seen.append(fallback)
+    # 候选按在句子中的出现位置排序，保证“第 N 个空 == 第 N 个答案”一一对应。
+    seen.sort(key=lambda candidate: sentence.find(candidate))
+    return seen[:max_spans]
+
+
+def _context_window(body: str, sentence: str, window: int = 140) -> str:
+    """挖空卡片的段落上下文：从单元正文定位句子，前后各取 window 字符，
+    越界加“……”。找不到句子时回退为句子本身。"""
+    idx = body.find(sentence)
+    if idx < 0:
+        return sentence
+    start = max(0, idx - window)
+    end = min(len(body), idx + len(sentence) + window)
+    prefix = "……" if start > 0 else ""
+    suffix = "……" if end < len(body) else ""
+    return prefix + body[start:end].replace("\r", "").strip() + suffix
+
+
+_CLOZE_MARKERS = re.compile(r"是指|系指|包括|应当|必须|不得|须|条件|要件|标准|期限|分为|种类|有权|无权|可以|属于")
+_FLASHCARD_MARKERS = re.compile(r"为什么|因为|所以|区别|不同于|例外|除外|意义|作用|价值|目的|依据|根据|规定|但是|然而|如果|只要|才能")
+
+
+def _split_pools(sentences: list[str]) -> tuple[list[str], list[str]]:
+    """素材分流：判定词密集且无逻辑词 → 挖空池（提取知识点）；
+    含逻辑关系词 → 闪卡池（复述结构）。都命中或都没命中按长度分
+    （短句→提取型，长句→复述型）。避免同一句既挖空又闪卡。"""
+    cloze_pool: list[str] = []
+    flash_pool: list[str] = []
+    for sentence in sentences:
+        cloze_hit = bool(_CLOZE_MARKERS.search(sentence))
+        flash_hit = bool(_FLASHCARD_MARKERS.search(sentence))
+        if cloze_hit and not flash_hit:
+            cloze_pool.append(sentence)
+        elif flash_hit and not cloze_hit:
+            flash_pool.append(sentence)
+        elif len(sentence) <= 120:
+            cloze_pool.append(sentence)
+        else:
+            flash_pool.append(sentence)
+    return cloze_pool, flash_pool
+
+
 def retrieval_content_hash(item_type: str, prompt: str, answer: str, source_excerpt: str) -> str:
     payload = "\x1f".join((item_type, prompt, answer, source_excerpt))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -265,12 +373,13 @@ def generate_retrieval_items(
     max_per_type: int = 3,
 ) -> list[RetrievalDraft]:
     requested = list(dict.fromkeys(item_types))
-    sentences = important_sentences(body, limit=max(6, max_per_type * 2))
+    sentences = important_sentences(body, limit=max(8, max_per_type * 3))
     if not sentences:
         return []
     sentences = [sentence for sentence in sentences if not _WATERMARK.search(sentence)]
     if not sentences:
         return []
+    cloze_pool, flash_pool = _split_pools(sentences)
 
     drafts: list[RetrievalDraft] = []
     if "flashcard" in requested:
@@ -288,13 +397,14 @@ def generate_retrieval_items(
             )
         )
         seen_prompts = {overview_prompt}
-        for index, sentence in enumerate(sentences):
+        for index, sentence in enumerate(flash_pool):
             if len(drafts) >= max_per_type:
                 break
             prompt = _flashcard_prompt(title, sentence, index)
             if prompt in seen_prompts:
                 continue
             seen_prompts.add(prompt)
+            excerpt = _context_window(body, sentence)
             drafts.append(
                 RetrievalDraft(
                     id=str(uuid4()),
@@ -302,7 +412,8 @@ def generate_retrieval_items(
                     prompt=prompt,
                     answer=sentence,
                     cloze_text=None,
-                    source_excerpt=sentence,
+                    source_excerpt=excerpt,
+                    # content_hash 用稳定句子做卡片身份（正文追加不影响），窗口只用于展示
                     content_hash=retrieval_content_hash("flashcard", prompt, sentence, sentence),
                 )
             )
@@ -310,22 +421,27 @@ def generate_retrieval_items(
     if "cloze" in requested:
         cloze_count = 0
         seen_pairs: set[tuple[str, str]] = set()
-        for sentence in sentences:
+        for sentence in cloze_pool:
             if cloze_count >= max_per_type:
                 break
-            answer = find_cloze_span(sentence, title)
-            if not answer or answer not in sentence:
+            spans = find_cloze_spans(sentence, title, max_spans=3)
+            if not spans:
                 continue
-            cloze_text = sentence.replace(answer, "____", 1)
+            cloze_text = sentence
+            for span in spans:
+                if span in cloze_text:
+                    cloze_text = cloze_text.replace(span, "____", 1)
             visible_context = re.sub(r"[_，,。.;；:：\s]", "", cloze_text)
             sentence_content = re.sub(r"[，,。.;；:：\s]", "", sentence)
-            if len(visible_context) < 4 or len(answer) / max(len(sentence_content), 1) > 0.7:
+            if len(visible_context) < 4 or sum(len(s) for s in spans) / max(len(sentence_content), 1) > 0.7:
                 continue
+            answer = ANSWER_SEP.join(spans)
             pair = (cloze_text, answer)
             if pair in seen_pairs:
                 continue
             seen_pairs.add(pair)
             prompt = f"填空：{cloze_text}"
+            excerpt = _context_window(body, sentence)
             drafts.append(
                 RetrievalDraft(
                     id=str(uuid4()),
@@ -333,7 +449,7 @@ def generate_retrieval_items(
                     prompt=prompt,
                     answer=answer,
                     cloze_text=cloze_text,
-                    source_excerpt=sentence,
+                    source_excerpt=excerpt,
                     content_hash=retrieval_content_hash("cloze", prompt, answer, sentence),
                 )
             )
@@ -350,6 +466,8 @@ def normalize_answer(text: str) -> str:
 
 
 def grade_cloze(response: str, expected: str) -> ClozeGrade:
+    if ANSWER_SEP in expected:
+        return _grade_multi_cloze(response, expected)
     actual = normalize_answer(response)
     target = normalize_answer(expected)
     if not actual:
@@ -383,6 +501,41 @@ def grade_cloze(response: str, expected: str) -> ClozeGrade:
     if score >= 60:
         return ClozeGrade(score, "hard", False, actual, target, "部分接近，但关键术语仍需修正。")
     return ClozeGrade(score, "again", False, actual, target, "答案与目标差距较大，建议立即重做。")
+
+
+def _grade_multi_cloze(response: str, expected: str) -> ClozeGrade:
+    """多空评分：按 ANSWER_SEP 拆分答案逐一评分，取加权平均；
+    全部正确才 good，部分正确按比例降级。"""
+    parts = expected.split(ANSWER_SEP)
+    if ANSWER_SEP in response:
+        given = response.split(ANSWER_SEP)
+    else:
+        given = [piece.strip() for piece in re.split(r"[；;，,、\s]+", response.strip()) if piece.strip()]
+    if not given:
+        return ClozeGrade(0.0, "again", False, normalize_answer(response), normalize_answer(expected), "未填写答案。")
+    grades = []
+    for index, part in enumerate(parts):
+        answer_piece = given[index] if index < len(given) else ""
+        grades.append(grade_cloze(answer_piece, part))
+    average = round(sum(grade.score for grade in grades) / len(grades), 1)
+    all_correct = all(grade.correct for grade in grades)
+    rating: RetrievalRating = "good" if all_correct else ("hard" if average >= 60 else "again")
+    critical = tuple(mismatch for grade in grades for mismatch in grade.critical_mismatches)
+    if all_correct:
+        note = f"全部 {len(parts)} 个填空均正确。"
+    elif average >= 85:
+        note = f"多数填空高度接近（平均 {average} 分），请核对每个空位的术语精度。"
+    else:
+        note = f"部分填空未完全正确（平均 {average} 分），建议回源核对各空位。"
+    return ClozeGrade(
+        average,
+        rating,
+        all_correct or average >= 85,
+        normalize_answer(response),
+        normalize_answer(expected),
+        note,
+        critical,
+    )
 
 
 def score_for_rating(rating: RetrievalRating) -> float:
