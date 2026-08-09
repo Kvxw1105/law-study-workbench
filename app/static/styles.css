@@ -2113,3 +2113,28 @@ mark.excerpt-mark {
 .pdf-viewer-page-label { font-size: 12px; opacity: .8; min-width: 64px; text-align: center; }
 .pdf-viewer-body { flex: 1; min-height: 0; }
 .pdf-embed { width: 100%; height: 100%; border: none; display: block; }
+
+/* ---- 自研 PDF 阅读器（pdf.js canvas + 高亮） ---- */
+.pdf-viewer-body { overflow: auto; }
+.pdf-reader-canvas-host {
+  position: relative;
+  margin: 0 auto;
+  background: var(--surface-2);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.3);
+  min-height: 200px;
+}
+.pdf-reader-canvas { display: block; }
+.pdf-reader-highlights { position: absolute; inset: 0; pointer-events: none; }
+.pdf-highlight {
+  position: absolute;
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.pdf-reader-status {
+  padding: 20px;
+  text-align: center;
+  opacity: 0.85;
+  font-size: 13px;
+}
+.pdf-reader-status.is-error { color: var(--danger); }

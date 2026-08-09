@@ -984,7 +984,7 @@ function renderRetrievalManageItem(item, index = 0) {
       <div class="retrieval-manage-main">
         <header class="retrieval-manage-head">
           <div>
-            <div class="inline-meta"><span class="status-pill ${item.item_type === "cloze" ? "warn" : "good"}">${typeLabel}</span><span>${escapeHtml(item.unit_title)}</span><span>第 ${item.page_start}-${item.page_end} 页</span><a class="pdf-jump" href="${pdfJumpHref(item.source_id, item.page_start)}" target="_blank" rel="noopener">在 PDF 中查看</a></div>
+            <div class="inline-meta"><span class="status-pill ${item.item_type === "cloze" ? "warn" : "good"}">${typeLabel}</span><span>${escapeHtml(item.unit_title)}</span><span>第 ${item.page_start}-${item.page_end} 页</span><a class="pdf-jump" href="${pdfJumpHref(item.source_id, item.page_start)}" data-locate="${escapeHtml((item.answer || "").split("\x1f")[0])}" target="_blank" rel="noopener">在 PDF 中查看</a></div>
             <div class="task-title">${escapeHtml(item.prompt)}</div>
           </div>
           <span class="mastery-badge">${escapeHtml(item.mastery_status || "新卡")}</span>
@@ -1014,7 +1014,7 @@ function renderRetrievalPractice() {
         <div>
           <div class="inline-meta"><span class="status-pill ${isFlashcard ? "good" : "warn"}">${isFlashcard ? "闪卡" : "挖空"}</span><span>${escapeHtml(state.retrievalQueueLabel)}</span></div>
           <h2>${escapeHtml(item.unit_title)}</h2>
-          <p>${escapeHtml(item.original_name)} · 第 ${item.page_start}-${item.page_end} 页 · <a class="pdf-jump" href="${pdfJumpHref(item.source_id, item.page_start)}" target="_blank" rel="noopener">打开教材原文</a></p>
+          <p>${escapeHtml(item.original_name)} · 第 ${item.page_start}-${item.page_end} 页 · <a class="pdf-jump" href="${pdfJumpHref(item.source_id, item.page_start)}" data-locate="${escapeHtml((item.answer || "").split("\x1f")[0])}" target="_blank" rel="noopener">打开教材原文</a></p>
         </div>
         <div class="practice-counter"><strong>${currentNumber}</strong><span>/ ${Math.max(total, 1)}</span></div>
       </header>
@@ -1091,7 +1091,7 @@ function renderRetrievalResult() {
 
     <section class="answer-comparison">
       <article><div class="section-kicker">EXPECTED ANSWER</div><h3>标准答案</h3><p>${escapeHtml(result.expected_answer).split("\x1f").join("<br>")}</p></article>
-      <article class="source-answer"><div class="section-kicker">SOURCE</div><h3>教材来源</h3><p><strong>第 ${result.page_start}-${result.page_end} 页</strong> · <a class="pdf-jump" href="${pdfJumpHref(result.source_id, result.page_start)}" target="_blank" rel="noopener">在 PDF 中查看原文</a></p><details class="source-excerpt-details"><summary>展开原文片段</summary>${highlightInExcerpt(result.source_excerpt, result.expected_answer)}</details></article>
+      <article class="source-answer"><div class="section-kicker">SOURCE</div><h3>教材来源</h3><p><strong>第 ${result.page_start}-${result.page_end} 页</strong> · <a class="pdf-jump" href="${pdfJumpHref(result.source_id, result.page_start)}" data-locate="${escapeHtml((result.expected_answer || "").split("\x1f")[0])}" target="_blank" rel="noopener">在 PDF 中查看原文</a></p><details class="source-excerpt-details"><summary>展开原文片段</summary>${highlightInExcerpt(result.source_excerpt, result.expected_answer)}</details></article>
     </section>
 
     <section class="review-ticket">
@@ -1576,56 +1576,186 @@ async function selectionBuildFlashcard() {
   }
 }
 
-function openPdf(sourceId, page) {
-  const dialog = $("#pdfViewerDialog");
-  const body = $("#pdfViewerBody");
-  if (!dialog || !body) {
-    // 兜底：无查看器时回退新标签
-    window.open(pdfJumpHref(sourceId, page), "_blank", "noopener");
-    return;
-  }
-  state.pdfViewer = { sourceId, page: page || 1 };
-  const source = Array.isArray(state.sources) ? state.sources.find((item) => item.id === sourceId) : null;
-  const title = $("#pdfViewerTitle");
-  if (title) title.textContent = source?.original_name || "教材原文";
-  renderPdfEmbed();
-  if (typeof dialog.showModal === "function") dialog.showModal();
-  else dialog.setAttribute("open", "");
-  const pageLabel = $("#pdfViewerPage");
-  if (pageLabel) pageLabel.textContent = `第 ${state.pdfViewer.page} 页`;
-}
+const PdfReader = {
+  lib: null,
+  pdfDoc: null,
+  sourceId: null,
+  page: 1,
+  scale: 1.3,
+  locateRects: [],
+  locatePage: null,
 
-function renderPdfEmbed() {
-  const body = $("#pdfViewerBody");
-  if (!body || !state.pdfViewer) return;
-  const { sourceId, page } = state.pdfViewer;
-  body.innerHTML = `<embed type="application/pdf" class="pdf-embed" src="/api/source-files/${sourceId}#page=${page}">`;
-}
+  async ensureLib() {
+    if (this.lib) return this.lib;
+    const lib = await import("/vendor/pdfjs/pdf.min.mjs");
+    lib.GlobalWorkerOptions.workerSrc = "/vendor/pdfjs/pdf.worker.min.mjs";
+    lib.GlobalWorkerOptions.cMapUrl = "/vendor/pdfjs/cmaps/";
+    lib.GlobalWorkerOptions.cMapPacked = true;
+    this.lib = lib;
+    return lib;
+  },
 
-function pdfViewerStep(delta) {
-  if (!state.pdfViewer) return;
-  state.pdfViewer.page = Math.max(1, state.pdfViewer.page + delta);
-  const pageLabel = $("#pdfViewerPage");
-  if (pageLabel) pageLabel.textContent = `第 ${state.pdfViewer.page} 页`;
-  renderPdfEmbed();
-}
+  status(text, isError = false) {
+    const el = $("#pdfReaderStatus");
+    if (!el) return;
+    el.textContent = text;
+    el.classList.toggle("is-error", Boolean(isError));
+    el.hidden = false;
+  },
 
-function bindPdfViewerActions() {
-  document.querySelector('[data-action="close-pdf-viewer"]')?.addEventListener("click", () => {
+  async open({ sourceId, page, locateText, titleText }) {
+    this.sourceId = sourceId;
+    this.page = page || 1;
+    this.locateRects = [];
+    this.locatePage = null;
+    const statusEl = $("#pdfReaderStatus");
+    if (statusEl) statusEl.hidden = true;
+    try {
+      const lib = await this.ensureLib();
+      this.status("正在加载教材（首次约数秒）……");
+      this.pdfDoc = await lib.getDocument({
+        url: `/api/source-files/${sourceId}`,
+        cMapUrl: "/vendor/pdfjs/cmaps/",
+        cMapPacked: true,
+      }).promise;
+      const title = $("#pdfViewerTitle");
+      if (title) title.textContent = titleText || "教材原文";
+      if (locateText) {
+        this.status("正在定位原文句子……");
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 12000);
+        try {
+          const response = await fetch(`/api/locate?source_id=${encodeURIComponent(sourceId)}&text=${encodeURIComponent(locateText)}`, { signal: controller.signal });
+          clearTimeout(timer);
+          if (response.ok) {
+            const located = await response.json();
+            this.page = located.page;
+            this.locatePage = located.page;
+            this.locateRects = located.rects || [];
+          }
+        } catch (_) {
+          /* 定位失败回退到页码 */
+        }
+      }
+      await this.render();
+      if (this.locateRects.length) {
+        // 定位完成后兜底重新应用高亮（防时序：fetch 晚于首帧渲染）
+        requestAnimationFrame(() => this.applyHighlights(this.lastViewport));
+      }
+      if (this.locatePage) {
+        requestAnimationFrame(() => {
+          const first = this.highlightEl()?.firstElementChild;
+          if (first) first.scrollIntoView({ block: "center", behavior: "smooth" });
+        });
+      }
+    } catch (error) {
+      this.status(`无法打开教材：${error.message || error}`, true);
+    }
+  },
+
+  highlightEl() {
+    return $("#pdfReaderHighlights");
+  },
+
+  async render() {
+    if (!this.pdfDoc) return;
+    const pdfPage = await this.pdfDoc.getPage(this.page);
+    const viewport = pdfPage.getViewport({ scale: this.scale });
+    const canvas = $("#pdfReaderCanvas");
+    if (!canvas) return;
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    canvas.style.width = `${Math.floor(viewport.width)}px`;
+    canvas.style.height = `${Math.floor(viewport.height)}px`;
+    const renderTask = pdfPage.render({ canvasContext: canvas.getContext("2d"), viewport });
+    await renderTask.promise;
+    this.lastViewport = viewport;
+    const statusEl = $("#pdfReaderStatus");
+    if (statusEl) statusEl.hidden = true;
+    const host = $("#pdfReaderCanvasHost");
+    if (host) host.style.width = `${Math.floor(viewport.width)}px`;
+    const pageLabel = $("#pdfViewerPage");
+    if (pageLabel) pageLabel.textContent = `第 ${this.page} / ${this.pdfDoc.numPages} 页`;
+    this.applyHighlights(viewport);
+  },
+
+  applyHighlights(viewport) {
+    const host = this.highlightEl();
+    if (!host) return;
+    host.innerHTML = "";
+    if (!this.locateRects.length || this.locatePage !== this.page) return;
+    const scale = viewport.scale;
+    for (const rect of this.locateRects) {
+      const div = document.createElement("div");
+      div.className = "pdf-highlight";
+      div.style.left = `${rect.x0 * scale}px`;
+      div.style.top = `${rect.y0 * scale}px`;
+      div.style.width = `${Math.max(2, (rect.x1 - rect.x0) * scale)}px`;
+      div.style.height = `${Math.max(14, (rect.y1 - rect.y0) * scale)}px`;
+      host.appendChild(div);
+    }
+  },
+
+  async step(delta) {
+    if (!this.pdfDoc) return;
+    const next = this.page + delta;
+    if (next < 1 || next > this.pdfDoc.numPages) return;
+    this.page = next;
+    this.locatePage = null;
+    this.locateRects = [];
+    await this.render();
+  },
+
+  async zoom(delta) {
+    if (!this.pdfDoc) return;
+    this.scale = Math.min(3, Math.max(0.6, this.scale + delta));
+    await this.render();
+  },
+
+  async close() {
+    if (this.pdfDoc) {
+      try { await this.pdfDoc.destroy(); } catch (_) {}
+    }
+    this.pdfDoc = null;
+    this.locateRects = [];
+    this.locatePage = null;
     const dialog = $("#pdfViewerDialog");
     if (dialog?.open && typeof dialog.close === "function") dialog.close();
     else dialog?.removeAttribute("open");
     state.pdfViewer = null;
-  });
-  document.querySelector('[data-action="pdf-prev"]')?.addEventListener("click", () => pdfViewerStep(-1));
-  document.querySelector('[data-action="pdf-next"]')?.addEventListener("click", () => pdfViewerStep(1));
+  },
+};
+
+window.PdfReader = PdfReader; // 调试与外部接入入口
+
+function openPdf(sourceId, page, locateText) {
+  const dialog = $("#pdfViewerDialog");
+  if (!dialog) {
+    window.open(pdfJumpHref(sourceId, page), "_blank", "noopener");
+    return;
+  }
+  state.pdfViewer = { sourceId, page: page || 1, locateText: locateText || null };
+  const source = Array.isArray(state.sources) ? state.sources.find((item) => item.id === sourceId) : null;
+  const titleText = source?.original_name || "教材原文";
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.setAttribute("open", "");
+  PdfReader.open({ sourceId, page: page || 1, locateText: locateText || null, titleText });
+}
+
+function bindPdfViewerActions() {
+  document.querySelector('[data-action="close-pdf-viewer"]')?.addEventListener("click", () => PdfReader.close());
+  document.querySelector('[data-action="pdf-prev"]')?.addEventListener("click", () => PdfReader.step(-1));
+  document.querySelector('[data-action="pdf-next"]')?.addEventListener("click", () => PdfReader.step(1));
+  document.querySelector('[data-action="pdf-zoom-in"]')?.addEventListener("click", () => PdfReader.zoom(0.15));
+  document.querySelector('[data-action="pdf-zoom-out"]')?.addEventListener("click", () => PdfReader.zoom(-0.15));
   document.querySelector('[data-action="pdf-external"]')?.addEventListener("click", () => {
-    if (state.pdfViewer) window.open(pdfJumpHref(state.pdfViewer.sourceId, state.pdfViewer.page), "_blank", "noopener");
+    if (state.pdfViewer) window.open(pdfJumpHref(state.pdfViewer.sourceId, PdfReader.page), "_blank", "noopener");
   });
 }
 
-// 应用内查看：拦截所有“在 PDF 中查看 / 打开原 PDF”链接，改为应用内嵌渲染
+// 应用内查看：拦截所有“在 PDF 中查看 / 打开原 PDF”链接，改为自研阅读器
 // （新标签打开会被浏览器扩展如 AIX Downloader 劫持成下载界面）。
+// data-locate 为定位目标文本（原句/答案），命中后跳页并高亮。
 document.addEventListener("click", (event) => {
   const link = event.target.closest?.("a.pdf-jump, a[href*='/api/source-files/']");
   if (!link) return;
@@ -1633,7 +1763,7 @@ document.addEventListener("click", (event) => {
   const match = href.match(/\/api\/source-files\/([^#?]+)(?:#page=(\d+))?/);
   if (!match) return;
   event.preventDefault();
-  openPdf(match[1], match[2] ? Number(match[2]) : null);
+  openPdf(match[1], match[2] ? Number(match[2]) : null, link.dataset.locate || null);
 });
 
 function pdfJumpHref(sourceId, page) {

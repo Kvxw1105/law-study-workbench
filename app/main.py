@@ -9,8 +9,11 @@ import sqlite3
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+import re
 from typing import Any
 from uuid import uuid4
+
+import fitz
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -2170,6 +2173,61 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not path.exists():
             raise HTTPException(status_code=410, detail="本地教材文件已丢失")
         return FileResponse(path, media_type="application/pdf", filename=row["original_name"], content_disposition_type="inline")
+
+    _locate_docs: dict[str, Any] = {}
+    _locate_cache: dict[str, dict[str, Any]] = {}
+
+    @app.get("/api/locate")
+    def locate_source_text(
+        source_id: str = Query(..., min_length=8),
+        text: str = Query(..., min_length=2, max_length=200),
+    ) -> dict[str, Any]:
+        """在 PDF 中定位一段文本（句子/答案），返回页码与页面坐标矩形（左上原点）。
+        PyMuPDF search_for 实现，带进程内缓存；未命中返回 404。"""
+        with db.connect() as conn:
+            row = conn.execute(
+                "SELECT stored_path FROM source_documents WHERE id=?", (source_id,)
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="教材不存在")
+        path = Path(row["stored_path"])
+        if not path.exists():
+            raise HTTPException(status_code=410, detail="本地教材文件已丢失")
+
+        clean = text.replace("\x1f", " ").replace("……", "").replace("\r", " ").replace("\n", " ").strip(" ，,。.;；:：\"“”")
+        if len(clean) < 2:
+            raise HTTPException(status_code=422, detail="定位文本过短")
+        cache_key = f"{source_id}|{clean}"
+        cached = _locate_cache.get(cache_key)
+        if cached:
+            return cached
+
+        document = _locate_docs.get(source_id)
+        if document is None:
+            document = fitz.open(path)
+            _locate_docs[source_id] = document
+        # 候选：原文优先，其次按句切分取 10–60 字的子句
+        candidates = [clean]
+        for part in re.split(r"[。；;！？!?]", clean):
+            part = part.strip(" ，,。.;；:：\"“”")
+            if 6 <= len(part) <= 60 and part not in candidates:
+                candidates.append(part)
+        for page_index in range(document.page_count):
+            page = document[page_index]
+            for candidate in candidates:
+                rects = page.search_for(candidate)
+                if rects:
+                    result = {
+                        "source_id": source_id,
+                        "page": page_index + 1,
+                        "rects": [{"x0": r.x0, "y0": r.y0, "x1": r.x1, "y1": r.y1} for r in rects[:8]],
+                        "matched": candidate[:80],
+                    }
+                    _locate_cache[cache_key] = result
+                    if len(_locate_cache) > 256:
+                        _locate_cache.pop(next(iter(_locate_cache)))
+                    return result
+        raise HTTPException(status_code=404, detail="在教材中未找到该文本，已回退到页码定位")
 
     @app.exception_handler(Exception)
     async def unhandled_exception(_, exc: Exception):

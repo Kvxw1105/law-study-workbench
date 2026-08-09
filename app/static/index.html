@@ -164,14 +164,22 @@
           <h2 id="pdfViewerTitle">教材原文</h2>
         </div>
         <div class="pdf-viewer-actions">
+          <button class="ghost-button small-button" type="button" data-action="pdf-zoom-out" aria-label="缩小">缩小</button>
+          <button class="ghost-button small-button" type="button" data-action="pdf-zoom-in" aria-label="放大">放大</button>
           <button class="ghost-button small-button" type="button" data-action="pdf-prev" aria-label="上一页">上一页</button>
-          <span id="pdfViewerPage" class="pdf-viewer-page-label">第 1 页</span>
+          <span id="pdfViewerPage" class="pdf-viewer-page-label">第 1 / 1 页</span>
           <button class="ghost-button small-button" type="button" data-action="pdf-next" aria-label="下一页">下一页</button>
           <button class="ghost-button small-button" type="button" data-action="pdf-external" aria-label="在新标签中打开">新标签打开</button>
           <button class="icon-button dialog-close" type="button" data-action="close-pdf-viewer" aria-label="关闭">×</button>
         </div>
       </header>
-      <div id="pdfViewerBody" class="pdf-viewer-body"></div>
+      <div id="pdfViewerBody" class="pdf-viewer-body">
+        <div id="pdfReaderCanvasHost" class="pdf-reader-canvas-host">
+          <canvas id="pdfReaderCanvas" class="pdf-reader-canvas"></canvas>
+          <div id="pdfReaderHighlights" class="pdf-reader-highlights" aria-hidden="true"></div>
+        </div>
+        <div id="pdfReaderStatus" class="pdf-reader-status">正在加载教材……</div>
+      </div>
     </div>
   </dialog>
 
