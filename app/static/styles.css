@@ -2087,3 +2087,29 @@ mark.excerpt-mark {
   margin-top: 6px;
   line-height: 1.7;
 }
+
+/* ---- 应用内 PDF 查看器 ---- */
+.pdf-viewer-dialog {
+  width: min(96vw, 1500px);
+  height: 92vh;
+  max-width: none;
+  max-height: 92vh;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: var(--surface-1);
+}
+.pdf-viewer-frame { display: flex; flex-direction: column; height: 100%; }
+.pdf-viewer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line-1);
+}
+.pdf-viewer-head h2 { font-size: 15px; margin: 0; }
+.pdf-viewer-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pdf-viewer-page-label { font-size: 12px; opacity: .8; min-width: 64px; text-align: center; }
+.pdf-viewer-body { flex: 1; min-height: 0; }
+.pdf-embed { width: 100%; height: 100%; border: none; display: block; }

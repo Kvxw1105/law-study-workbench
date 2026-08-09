@@ -156,6 +156,25 @@
     </div>
   </dialog>
 
+  <dialog id="pdfViewerDialog" class="pdf-viewer-dialog">
+    <div class="pdf-viewer-frame">
+      <header class="pdf-viewer-head">
+        <div>
+          <div class="eyebrow">LOCAL PDF</div>
+          <h2 id="pdfViewerTitle">教材原文</h2>
+        </div>
+        <div class="pdf-viewer-actions">
+          <button class="ghost-button small-button" type="button" data-action="pdf-prev" aria-label="上一页">上一页</button>
+          <span id="pdfViewerPage" class="pdf-viewer-page-label">第 1 页</span>
+          <button class="ghost-button small-button" type="button" data-action="pdf-next" aria-label="下一页">下一页</button>
+          <button class="ghost-button small-button" type="button" data-action="pdf-external" aria-label="在新标签中打开">新标签打开</button>
+          <button class="icon-button dialog-close" type="button" data-action="close-pdf-viewer" aria-label="关闭">×</button>
+        </div>
+      </header>
+      <div id="pdfViewerBody" class="pdf-viewer-body"></div>
+    </div>
+  </dialog>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/app.js" defer></script>
 </body>

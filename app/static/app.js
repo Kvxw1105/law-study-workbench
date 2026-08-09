@@ -39,6 +39,7 @@ const state = {
   dialogContext: null,
   unitDialogContext: null,
   unitSelection: null,
+  pdfViewer: null,
   draftStatus: "saved",
   portableImportResult: null,
   preferences: loadUiPreferences(),
@@ -1576,9 +1577,64 @@ async function selectionBuildFlashcard() {
 }
 
 function openPdf(sourceId, page) {
-  const url = page ? `/api/source-files/${sourceId}#page=${page}` : `/api/source-files/${sourceId}`;
-  window.open(url, "_blank", "noopener");
+  const dialog = $("#pdfViewerDialog");
+  const body = $("#pdfViewerBody");
+  if (!dialog || !body) {
+    // 兜底：无查看器时回退新标签
+    window.open(pdfJumpHref(sourceId, page), "_blank", "noopener");
+    return;
+  }
+  state.pdfViewer = { sourceId, page: page || 1 };
+  const source = Array.isArray(state.sources) ? state.sources.find((item) => item.id === sourceId) : null;
+  const title = $("#pdfViewerTitle");
+  if (title) title.textContent = source?.original_name || "教材原文";
+  renderPdfEmbed();
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.setAttribute("open", "");
+  const pageLabel = $("#pdfViewerPage");
+  if (pageLabel) pageLabel.textContent = `第 ${state.pdfViewer.page} 页`;
 }
+
+function renderPdfEmbed() {
+  const body = $("#pdfViewerBody");
+  if (!body || !state.pdfViewer) return;
+  const { sourceId, page } = state.pdfViewer;
+  body.innerHTML = `<embed type="application/pdf" class="pdf-embed" src="/api/source-files/${sourceId}#page=${page}">`;
+}
+
+function pdfViewerStep(delta) {
+  if (!state.pdfViewer) return;
+  state.pdfViewer.page = Math.max(1, state.pdfViewer.page + delta);
+  const pageLabel = $("#pdfViewerPage");
+  if (pageLabel) pageLabel.textContent = `第 ${state.pdfViewer.page} 页`;
+  renderPdfEmbed();
+}
+
+function bindPdfViewerActions() {
+  document.querySelector('[data-action="close-pdf-viewer"]')?.addEventListener("click", () => {
+    const dialog = $("#pdfViewerDialog");
+    if (dialog?.open && typeof dialog.close === "function") dialog.close();
+    else dialog?.removeAttribute("open");
+    state.pdfViewer = null;
+  });
+  document.querySelector('[data-action="pdf-prev"]')?.addEventListener("click", () => pdfViewerStep(-1));
+  document.querySelector('[data-action="pdf-next"]')?.addEventListener("click", () => pdfViewerStep(1));
+  document.querySelector('[data-action="pdf-external"]')?.addEventListener("click", () => {
+    if (state.pdfViewer) window.open(pdfJumpHref(state.pdfViewer.sourceId, state.pdfViewer.page), "_blank", "noopener");
+  });
+}
+
+// 应用内查看：拦截所有“在 PDF 中查看 / 打开原 PDF”链接，改为应用内嵌渲染
+// （新标签打开会被浏览器扩展如 AIX Downloader 劫持成下载界面）。
+document.addEventListener("click", (event) => {
+  const link = event.target.closest?.("a.pdf-jump, a[href*='/api/source-files/']");
+  if (!link) return;
+  const href = link.getAttribute("href") || "";
+  const match = href.match(/\/api\/source-files\/([^#?]+)(?:#page=(\d+))?/);
+  if (!match) return;
+  event.preventDefault();
+  openPdf(match[1], match[2] ? Number(match[2]) : null);
+});
 
 function pdfJumpHref(sourceId, page) {
   return page ? `/api/source-files/${sourceId}#page=${page}` : `/api/source-files/${sourceId}`;
@@ -2381,5 +2437,6 @@ function bindGlobalShellActions() {
 
 applyUiPreferences();
 bindGlobalShellActions();
+bindPdfViewerActions();
 window.loadCore = loadCore;
 loadCore();

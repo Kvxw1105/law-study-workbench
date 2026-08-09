@@ -13,7 +13,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.config import Settings
@@ -2169,7 +2169,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         path = Path(row["stored_path"])
         if not path.exists():
             raise HTTPException(status_code=410, detail="本地教材文件已丢失")
-        return FileResponse(path, media_type="application/pdf", filename=row["original_name"])
+        return FileResponse(path, media_type="application/pdf", filename=row["original_name"], content_disposition_type="inline")
 
     @app.exception_handler(Exception)
     async def unhandled_exception(_, exc: Exception):
@@ -2179,6 +2179,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         logging.getLogger("law-study").exception("unhandled error", exc_info=exc)
         return JSONResponse(status_code=500, content={"detail": "本地服务发生错误，请查看服务端日志"})
 
-    app.mount("/", StaticFiles(directory=settings.static_dir, html=True), name="static")
+    class NoCacheStaticFiles(StaticFiles):
+        """开发期静态资源不加缓存头：前端改动后浏览器强制重新验证（304 仍生效）。"""
+
+        def file_response(self, *args: Any, **kwargs: Any) -> Response:
+            response = super().file_response(*args, **kwargs)
+            response.headers["Cache-Control"] = "no-cache"
+            return response
+
+    app.mount("/", NoCacheStaticFiles(directory=settings.static_dir, html=True), name="static")
     return app
 
