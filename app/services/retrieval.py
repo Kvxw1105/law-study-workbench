@@ -51,7 +51,14 @@ class RetrievalPlan:
 
 from app.services.text_utils import rejoin_cjk_line_breaks
 
-_SENTENCE_SPLIT = re.compile(r"(?<=[。！？!?；;])\s*|\n+")
+# 句子边界只看句末标点（。！？!?），不把换行当边界、不把分号当边界——
+# PDF 段落内换行与列举分号（“条件 (1)…；(2)…”）会误切碎句子，
+# 导致挖空/证据片段孤立无上下文。
+_SENTENCE_SPLIT = re.compile(r"(?<=[。！？!?])\s*")
+
+# 版权水印特征：出现在正文中必是水印（“正版资料，请注意加入会员群 内部讲义，请勿盗印”），
+# 不能作为挖空/闪卡内容；注意“溶研毓秀/强化讲义”单独出现可能是正文引用，不在此列。
+_WATERMARK = re.compile(r"正版资料|盗印|会员群")
 _CHINESE = re.compile(r"[\u4e00-\u9fff]")
 
 
@@ -259,6 +266,9 @@ def generate_retrieval_items(
 ) -> list[RetrievalDraft]:
     requested = list(dict.fromkeys(item_types))
     sentences = important_sentences(body, limit=max(6, max_per_type * 2))
+    if not sentences:
+        return []
+    sentences = [sentence for sentence in sentences if not _WATERMARK.search(sentence)]
     if not sentences:
         return []
 
