@@ -1,3 +1,4 @@
+import os
 # -*- coding: utf-8 -*-
 """划选建卡浏览器冒烟：打开单元审核 → 划选正文 → 浮动条 → 挖空/闪卡建卡。"""
 import sys
@@ -8,7 +9,7 @@ from playwright.sync_api import sync_playwright
 
 OUT = Path(r"D:\A-Project\1法学学习台\artifacts\walk")
 OUT.mkdir(parents=True, exist_ok=True)
-CHROME = r"C:\Users\kvxkf\AppData\Local\ms-playwright\chromium-1228\chrome-win64\chrome.exe"
+CHROME = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", "")
 BASE = "http://127.0.0.1:8765"
 
 with sync_playwright() as p:

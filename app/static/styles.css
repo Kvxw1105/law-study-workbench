@@ -2056,3 +2056,34 @@ mark.excerpt-mark {
   border-radius: 3px;
   border-bottom: 2px solid var(--accent);
 }
+
+/* ---- 教材原文跳转 ---- */
+.pdf-jump {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.pdf-jump:hover { color: var(--accent-strong); }
+.inline-meta .pdf-jump { margin-left: 4px; }
+.source-answer .pdf-jump { font-size: 13px; }
+.source-excerpt-details,
+.source-quote details {
+  margin-top: 8px;
+  border: 1px solid var(--line-1);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.source-excerpt-details summary,
+.source-quote details summary {
+  cursor: pointer;
+  font-size: 12px;
+  opacity: .8;
+  user-select: none;
+}
+.source-excerpt-details p,
+.source-quote details p {
+  margin-top: 6px;
+  line-height: 1.7;
+}

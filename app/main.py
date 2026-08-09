@@ -1773,6 +1773,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "critical_mismatches": critical_mismatches,
             "expected_answer": row["answer"],
             "source_excerpt": row["source_excerpt"],
+            "source_id": row["source_id"],
             "page_start": row["page_start"],
             "page_end": row["page_end"],
             "review": {

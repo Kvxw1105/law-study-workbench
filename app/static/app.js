@@ -983,7 +983,7 @@ function renderRetrievalManageItem(item, index = 0) {
       <div class="retrieval-manage-main">
         <header class="retrieval-manage-head">
           <div>
-            <div class="inline-meta"><span class="status-pill ${item.item_type === "cloze" ? "warn" : "good"}">${typeLabel}</span><span>${escapeHtml(item.unit_title)}</span><span>第 ${item.page_start}-${item.page_end} 页</span></div>
+            <div class="inline-meta"><span class="status-pill ${item.item_type === "cloze" ? "warn" : "good"}">${typeLabel}</span><span>${escapeHtml(item.unit_title)}</span><span>第 ${item.page_start}-${item.page_end} 页</span><a class="pdf-jump" href="${pdfJumpHref(item.source_id, item.page_start)}" target="_blank" rel="noopener">在 PDF 中查看</a></div>
             <div class="task-title">${escapeHtml(item.prompt)}</div>
           </div>
           <span class="mastery-badge">${escapeHtml(item.mastery_status || "新卡")}</span>
@@ -1013,7 +1013,7 @@ function renderRetrievalPractice() {
         <div>
           <div class="inline-meta"><span class="status-pill ${isFlashcard ? "good" : "warn"}">${isFlashcard ? "闪卡" : "挖空"}</span><span>${escapeHtml(state.retrievalQueueLabel)}</span></div>
           <h2>${escapeHtml(item.unit_title)}</h2>
-          <p>${escapeHtml(item.original_name)} · 第 ${item.page_start}-${item.page_end} 页</p>
+          <p>${escapeHtml(item.original_name)} · 第 ${item.page_start}-${item.page_end} 页 · <a class="pdf-jump" href="${pdfJumpHref(item.source_id, item.page_start)}" target="_blank" rel="noopener">打开教材原文</a></p>
         </div>
         <div class="practice-counter"><strong>${currentNumber}</strong><span>/ ${Math.max(total, 1)}</span></div>
       </header>
@@ -1027,7 +1027,10 @@ function renderRetrievalPractice() {
             ${reveal ? `
               <div class="answer-reveal">
                 <section><span>标准答案</span><div class="retrieval-answer-text">${escapeHtml(reveal.answer).split("\x1f").join("<br>")}</div></section>
-                <section class="source-quote"><span>教材来源</span><p>${highlightInExcerpt(reveal.source_excerpt, reveal.answer)}</p></section>
+                <section class="source-quote">
+                  <span>教材来源 · 第 ${item.page_start}-${item.page_end} 页 · <a class="pdf-jump" href="${pdfJumpHref(item.source_id, item.page_start)}" target="_blank" rel="noopener">在 PDF 中查看</a></span>
+                  <details><summary>展开原文片段</summary><p>${highlightInExcerpt(reveal.source_excerpt, reveal.answer)}</p></details>
+                </section>
               </div>` : `
               <div class="retrieval-hidden-answer">
                 <div class="recall-pulse" aria-hidden="true"><span></span></div>
@@ -1087,7 +1090,7 @@ function renderRetrievalResult() {
 
     <section class="answer-comparison">
       <article><div class="section-kicker">EXPECTED ANSWER</div><h3>标准答案</h3><p>${escapeHtml(result.expected_answer).split("\x1f").join("<br>")}</p></article>
-      <article class="source-answer"><div class="section-kicker">SOURCE</div><h3>教材来源</h3><p><strong>第 ${result.page_start}-${result.page_end} 页</strong><br>${highlightInExcerpt(result.source_excerpt, result.expected_answer)}</p></article>
+      <article class="source-answer"><div class="section-kicker">SOURCE</div><h3>教材来源</h3><p><strong>第 ${result.page_start}-${result.page_end} 页</strong> · <a class="pdf-jump" href="${pdfJumpHref(result.source_id, result.page_start)}" target="_blank" rel="noopener">在 PDF 中查看原文</a></p><details class="source-excerpt-details"><summary>展开原文片段</summary>${highlightInExcerpt(result.source_excerpt, result.expected_answer)}</details></article>
     </section>
 
     <section class="review-ticket">
@@ -1417,7 +1420,7 @@ function openUnitDialog(unitId) {
     <div class="dialog-field-grid unit-review-grid">
       <div class="field full-field"><label for="unitDialogTitleInput">知识单元标题</label><input id="unitDialogTitleInput" value="${escapeHtml(unit.title)}" maxlength="160"></div>
       <div class="field"><label for="unitDialogObjective">学习材质</label><select id="unitDialogObjective">${objectiveTypes.map((item) => `<option value="${item}" ${item === unit.objective_type ? "selected" : ""}>${item}</option>`).join("")}</select></div>
-      <div class="field"><label>来源范围</label><div class="field-readonly">第 ${unit.page_start}-${unit.page_end} 页 · 原 PDF 可在教材页打开</div></div>
+      <div class="field"><label>来源范围</label><div class="field-readonly">第 ${unit.page_start}-${unit.page_end} 页 · <a class="pdf-jump" href="${pdfJumpHref(unit.source_id, unit.page_start)}" target="_blank" rel="noopener">在 PDF 中打开本单元</a></div></div>
       <div class="field full-field"><label>教材来源快照（只读）</label><textarea rows="9" readonly aria-readonly="true">${escapeHtml(unit.source_basis_text || "当前单元缺少可验证的来源快照，请回到原 PDF 核对。")}</textarea><small>来源状态：${escapeHtml(unit.source_basis_status || "unknown")} · 这一层不随学习笔记编辑而改变。</small></div>
       <div class="field full-field"><label for="unitDialogText">学习单元文本（可编辑）</label><textarea id="unitDialogText" rows="16">${escapeHtml(unit.body)}</textarea><small>修改这里会形成新的学习材料版本，当前掌握状态失效、活动卡片进入 stale，并要求重新确认。拆分时把光标放在新单元开始处。</small>
         <div class="selection-builder" id="unitSelectionBuilder" hidden>
@@ -1570,6 +1573,15 @@ async function selectionBuildFlashcard() {
   } catch (error) {
     toast(error.message, true);
   }
+}
+
+function openPdf(sourceId, page) {
+  const url = page ? `/api/source-files/${sourceId}#page=${page}` : `/api/source-files/${sourceId}`;
+  window.open(url, "_blank", "noopener");
+}
+
+function pdfJumpHref(sourceId, page) {
+  return page ? `/api/source-files/${sourceId}#page=${page}` : `/api/source-files/${sourceId}`;
 }
 
 function highlightInExcerpt(excerpt, answer) {
