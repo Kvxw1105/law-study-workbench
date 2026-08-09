@@ -49,6 +49,8 @@ class RetrievalPlan:
     reason: str
 
 
+from app.services.text_utils import rejoin_cjk_line_breaks
+
 _SENTENCE_SPLIT = re.compile(r"(?<=[。！？!?；;])\s*|\n+")
 _CHINESE = re.compile(r"[\u4e00-\u9fff]")
 
@@ -57,6 +59,7 @@ def _clean_text(text: str) -> str:
     text = text.replace("\u00a0", " ").replace("\r\n", "\n")
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{2,}", "\n", text)
+    text = rejoin_cjk_line_breaks(text)
     return text.strip()
 
 

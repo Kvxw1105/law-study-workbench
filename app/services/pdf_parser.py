@@ -9,6 +9,8 @@ from uuid import uuid4
 
 import fitz
 
+from app.services.text_utils import rejoin_cjk_line_breaks
+
 
 @dataclass(frozen=True)
 class ParsedPage:
@@ -32,6 +34,7 @@ def normalize_page_text(text: str) -> str:
     text = text.replace("\u00a0", " ").replace("\r\n", "\n")
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
+    text = rejoin_cjk_line_breaks(text)
     return text.strip()
 
 
@@ -89,19 +92,39 @@ def _objective_type(text: str) -> str:
     return "综合型"
 
 
+_HEADING_RE = re.compile(
+    r"^(?:第[一二三四五六七八九十百\d]+[章节编部分讲篇]|"
+    r"[一二三四五六七八九十]+、|"
+    r"【[^】]{2,20}】|"
+    r"\（[一二三四五六七八九十]+\）|"
+    r"\([一二三四五六七八九十\d]+\))"
+)
+# 页眉/版权水印特征（几乎每页出现），不能作为单元标题
+_HEADER_NOISE = re.compile(r"毓秀|强化讲义|内部讲义|正版资料|盗印")
+_CHAPTER_RE = re.compile(r"^第[一二三四五六七八九十百\d]+[章节编部分讲篇]")
+
+
 def _title_from_text(text: str, page_start: int, page_end: int) -> str:
-    first_line = re.split(r"[\n。！？；]", text.strip())[0].strip(" ：:、")
-    first_line = re.sub(r"\s+", " ", first_line)
-    if 4 <= len(first_line) <= 44:
-        return first_line
+    """优先用章节标题行做单元标题（如“第二节 民法的性质”“一、民法是市场经济的基本法”），
+    避免正文首句残段或页眉成为标题。"""
+    lines = [raw_line.strip(" ：:、") for raw_line in text.splitlines()[:30]]
+    candidates = [line for line in lines if 4 <= len(line) <= 44 and not _HEADER_NOISE.search(line)]
+    for line in candidates:
+        if _CHAPTER_RE.match(line):
+            return line
+    for line in candidates:
+        if _HEADING_RE.search(line):
+            return line
+    if candidates:
+        return candidates[0]
     suffix = f"第{page_start}页" if page_start == page_end else f"第{page_start}-{page_end}页"
     return f"{suffix}知识单元"
 
 
 def build_units(
     pages: list[ParsedPage],
-    target_chars: int = 1000,
-    max_chars: int = 1600,
+    target_chars: int = 2400,
+    max_chars: int = 3600,
 ) -> list[UnitDraft]:
     units: list[UnitDraft] = []
     current: list[str] = []
