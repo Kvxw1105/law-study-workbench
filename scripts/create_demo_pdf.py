@@ -29,9 +29,10 @@ def main() -> None:
         page = document.new_page(width=595, height=842)
         if font_path:
             page.insert_font(fontname="cjk", fontfile=font_path)
+            font = "cjk"
         else:
-            page.insert_font(fontname="cjk", ordering=0)  # 内置 CJK 回退
-        page.insert_textbox(fitz.Rect(60, 70, 535, 780), text, fontsize=13, fontname="cjk", lineheight=1.45)
+            font = "china-s"  # PyMuPDF built-in CJK, no external font file needed
+        page.insert_textbox(fitz.Rect(60, 70, 535, 780), text, fontsize=13, fontname=font, lineheight=1.45)
     document.save(output)
     document.close()
     print(output)

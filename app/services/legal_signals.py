@@ -101,7 +101,7 @@ _NUMBER_PATTERN = re.compile(
 _CLAUSE_SPLIT = re.compile(r"(?<=[。！？；.!?;])|\n+")
 _SENTENCE_END = re.compile(r"[。！？.!?]")
 _ENUM_SEPARATOR = re.compile(r"[\s、，,；;]+")
-_SCOPED_NEGATION_PREFIXES = ("并非", "并不", "并未", "未必", "不当然", "不必然", "并不是")
+_SCOPED_NEGATION_PREFIXES = ("并非", "并不", "并未", "未必", "不当然", "不必然", "并不是", "尚未", "还未")
 
 
 def compact(text: str) -> str:
@@ -129,14 +129,17 @@ def _polarity_side(
     for token in sorted(negatives, key=len, reverse=True):
         if token in text:
             if _is_scoped_negation(text, token):
-                scoped_opposite = True
-                continue
+                # e.g. "并非无权" — the scoped negation flips a negative token
+                # to the positive side.
+                return 1, token, True
             return -1, token, scoped_opposite
     for token in sorted(positives, key=len, reverse=True):
         if token in text:
             if _is_scoped_negation(text, token):
-                scoped_opposite = True
-                continue
+                # e.g. "尚未生效" — the scoped negation flips a positive token
+                # to the negative side (previously this silently became
+                # "neutral", missing real conflicts).
+                return -1, token, True
             return 1, token, scoped_opposite
     return 0, None, scoped_opposite
 
@@ -399,6 +402,9 @@ def split_clauses(text: str) -> list[str]:
     return [part.strip() for part in _CLAUSE_SPLIT.split(text or "") if len(compact(part)) >= 2]
 
 
+_EQUIVALENCE_THRESHOLD = 0.85
+
+
 def detect_clause_conflicts(source_text: str, answer_text: str, *, threshold: float = 0.40) -> list[ClauseConflict]:
     source_clauses = split_clauses(source_text)
     answer_clauses = split_clauses(answer_text)
@@ -407,29 +413,60 @@ def detect_clause_conflicts(source_text: str, answer_text: str, *, threshold: fl
         return conflicts
 
     seen: set[tuple[str, str, str, tuple[str, ...]]] = set()
+    used: list[bool] = [False] * len(answer_clauses)
+
+    def record(source_clause: str, answer_clause: str, severity: str, messages: tuple[str, ...]) -> None:
+        if not messages:
+            return
+        key = (source_clause, answer_clause, severity, messages)
+        if key in seen:
+            return
+        seen.add(key)
+        conflicts.append(
+            ClauseConflict(
+                source_clause=source_clause,
+                answer_clause=answer_clause,
+                similarity=round(_anchor_similarity(source_clause, answer_clause), 3),
+                severity=severity,
+                mismatches=messages,
+            )
+        )
+
+    # Phase 1: greedy equivalence matching. Identical / near-identical clauses
+    # are consumed first so cross-clause polarity words (无权/有权,
+    # 发生效力/不发生效力, …) cannot fire a false hard conflict between two
+    # DIFFERENT clauses of the same document. A matched pair that genuinely
+    # flips a polarity is still reported below.
     for source_clause in source_clauses:
-        for answer_clause in answer_clauses:
+        best_ai = -1
+        best_sim = threshold
+        for ai, answer_clause in enumerate(answer_clauses):
+            if used[ai]:
+                continue
+            similarity = _anchor_similarity(source_clause, answer_clause)
+            if similarity > best_sim:
+                best_sim = similarity
+                best_ai = ai
+        if best_ai < 0 or best_sim < _EQUIVALENCE_THRESHOLD:
+            continue
+        used[best_ai] = True
+        details = detect_mismatch_details(source_clause, answer_clauses[best_ai])
+        for severity in ("hard", "possible"):
+            messages = tuple(item.message for item in details if item.severity == severity)
+            record(source_clause, answer_clauses[best_ai], severity, messages)
+
+    # Phase 2: pairwise detection over the remaining (unmatched) clauses only.
+    for source_clause in source_clauses:
+        for ai, answer_clause in enumerate(answer_clauses):
+            if used[ai]:
+                continue
             similarity = _anchor_similarity(source_clause, answer_clause)
             if similarity < threshold:
                 continue
             details = detect_mismatch_details(source_clause, answer_clause)
             for severity in ("hard", "possible"):
                 messages = tuple(item.message for item in details if item.severity == severity)
-                if not messages:
-                    continue
-                key = (source_clause, answer_clause, severity, messages)
-                if key in seen:
-                    continue
-                seen.add(key)
-                conflicts.append(
-                    ClauseConflict(
-                        source_clause=source_clause,
-                        answer_clause=answer_clause,
-                        similarity=round(similarity, 3),
-                        severity=severity,
-                        mismatches=messages,
-                    )
-                )
+                record(source_clause, answer_clause, severity, messages)
     return conflicts
 
 

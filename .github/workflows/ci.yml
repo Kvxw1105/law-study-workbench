@@ -1,0 +1,67 @@
+name: alpha-core
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core:
+    name: core (guard + compile + js + pytest + smokes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies (lock)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-lock.txt pytest httpx playwright
+
+      - name: Public repo guard (tracked)
+        run: python scripts/public_repo_guard.py --tracked
+
+      - name: Compile check
+        run: python -m compileall -q app tests scripts
+
+      - name: JS syntax checks
+        run: |
+          node --check app/static/app.js
+          node --check portable-reviewer/app.js
+          node --check portable-reviewer/sw.js
+
+      - name: pytest
+        run: python -m pytest -q
+
+      - name: HTTP smoke (real uvicorn)
+        run: python scripts/http_smoke.py
+
+      - name: Backup/restore smoke
+        run: python scripts/backup_restore_smoke.py
+
+      - name: Study Protocol roundtrip smoke
+        run: python scripts/study_protocol_roundtrip_smoke.py
+
+      - name: Study Protocol conformance (browser-free)
+        run: python -m pytest tests/test_protocol_conformance.py tests/test_evidence_conformance.py tests/test_recovery_conformance.py -q
+
+      - name: Alpha doctor quick
+        run: python scripts/alpha_doctor.py --quick
+
+  # Browser lifecycle tests need a real Chromium + local HTTP server.
+  # They are the responsibility of local full-Alpha verification (and
+  # nightly runs) — installing Chromium on CI is heavy and can be flaky.
+  # Browser evidence is reported separately from CI core results.
+  browser-local:
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Browser lifecycle is verified locally (REAL_DEVICE_PENDING for phones)."

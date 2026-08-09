@@ -6,7 +6,7 @@
 - SQLite：Schema 4
 - 方法包：`law_full_recall_v1@0.3.0`
 - 工程状态：`LOCALLY_VERIFIED / COMMITTED / PUSHED / PR_MERGED / REAL_USER_ALPHA_PENDING`
-- Git：v0.8.0 基线已通过 PR #2（squash）merge 到 `main`（HEAD `7af8f93`，合并提交 `c9d7dea`）；已建 annotated tag `alpha-baseline-v0.8.0-ui-v2.1`；import 分支已删除。无 GitHub CI / Release。真实用户 Alpha 验收仍 pending。
+- Git：v0.8.0 基线已通过 PR #2（squash）进入 `main`；baseline tag `alpha-baseline-v0.8.0-ui-v2.1` 为历史事实。**当前 HEAD / branch / dirty / health 等实时状态不在此硬编码**——运行 `python scripts/alpha_status.py`（或 `--json`）读取。无 GitHub CI（直至 CI 建立后按证据层级声明 CI_PASSED）。真实用户 Alpha 验收仍 pending。
 - 证据层级（只能声明有证据的层级）：`EDITED → LOCALLY_VERIFIED → COMMITTED → PUSHED → PR_UPDATED → CI_PASSED → RELEASED`
 
 ## v0.8 Portable Study 保护线

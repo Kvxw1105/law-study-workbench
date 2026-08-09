@@ -73,6 +73,7 @@ build/
 # ---- 本机临时目录与缓存 ----
 tmp/
 temp/
+logs/
 *.log
 *.tmp
 

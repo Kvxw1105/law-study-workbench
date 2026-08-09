@@ -1,20 +1,28 @@
 # Project State
 
-更新时间：2026-08-08
+更新时间：2026-08-08（文档基线；Git/环境实时状态请运行 `python scripts/alpha_status.py`）
 模式：IMPLEMENT → REVIEW → HANDOFF
-工程状态：LOCALLY_VERIFIED / COMMITTED / PUSHED / PR_MERGED / REAL_USER_ALPHA_PENDING
-产品版本：0.8.0
-数据库 Schema：4
-方法包：law_full_recall_v1@0.3.0
+产品版本：0.8.0（稳定事实）
+数据库 Schema：4（不变量，不得改动）
+Study Protocol：study-pack/0.1 + study-events/0.1（不变量）
+方法包：law_full_recall_v1@0.3.0（稳定事实）
+Baseline tag：`alpha-baseline-v0.8.0-ui-v2.1`（历史事实，不移动）
 
-## Git 事实（与仓库一致）
+## 实时状态（本文件不硬编码）
 
-- v0.8.0 基线已通过 PR #2（squash）merge 到 `main`；`main` HEAD `7af8f93`（含启动器修复），合并提交 `c9d7dea`
-- 已建 annotated tag：`alpha-baseline-v0.8.0-ui-v2.1`（已 push）
-- import 分支 `alpha/import-v0.8.0-ui-v2.1` 已删除（本地与远程）
-- CI：无 GitHub CI，不得声明 CI_PASSED
-- Release：无；真实用户 Alpha 验收仍 pending（REAL_USER_ALPHA_PENDING）
-- 证据层级：只能声明有证据的层级 `EDITED / LOCALLY_VERIFIED / COMMITTED / PUSHED / PR_UPDATED / CI_PASSED / RELEASED`
+Git 与环境实时事实由 `python scripts/alpha_status.py`（或 `--json`）实时读取：
+
+- repository / branch / current HEAD / dirty / ahead-behind
+- baseline tag / product version / Schema / Study Protocol / data path
+- health state / Python / Node / verification metadata
+
+本文件只保存稳定的：产品版本、Schema、Protocol、方法包版本、验证层级定义、不变量与历史说明。
+禁止把“当前 HEAD”硬编码进本文件——提交状态文件本身会改变 HEAD，这是自我指涉问题。
+
+## 证据层级定义（可声明性）
+
+只能声明有证据的层级：`EDITED / LOCALLY_VERIFIED / COMMITTED / PUSHED / PR_UPDATED / CI_PASSED / RELEASED`。
+CI_PASSED 仅在真实 GitHub CI 通过后声明；RELEASED 仅在创建 Release 后声明（当前不适用）。
 
 ## 当前可信定位
 
@@ -89,7 +97,7 @@ PDF 导入 → 页级来源 → KnowledgeUnit → 来源基底/学习文本分�
 
 先做双重真实 Alpha：一章真实法学教材继续验证证据契约；同时用真实手机完成数天 StudyPack → 随身复习 → StudyEvents 回灌，记录文件摩擦、恢复、冲突和使用频率。两条证据稳定后，再决定 Sync Transport、Agent Route 与 SourceChunk/RuleAtom/FactAtom/Issue。
 
-Git 状态（2026-08-08 导入公开仓库后）：v0.8.0 基线已作为 `chore: import verified v0.8.0 alpha baseline` 提交到分支 `alpha/import-v0.8.0-ui-v2.1`，以 Draft PR 提交审查；`main` 未被直接修改，未创建 release/CI/部署。公开仓库按 `PUBLIC_REPO_POLICY.md` 只保存可公开源码、测试、协议与经检查文档，不含任何真实用户数据。
+公开仓库按 `PUBLIC_REPO_POLICY.md` 只保存可公开源码、测试、协议与经检查文档，不含任何真实用户数据。Git 基线历史：v0.8.0 已通过 PR #2（squash）进入 `main`，import 分支已删除；详见实时 `python scripts/alpha_status.py` 与 git log。
 
 ## UI/UX v3.0 前端重构（2026-08-08）
 
