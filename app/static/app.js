@@ -1639,8 +1639,8 @@ const PdfReader = {
       }
       await this.render();
       if (this.locateRects.length) {
-        // 定位完成后兜底重新应用高亮（防时序：fetch 晚于首帧渲染）
-        requestAnimationFrame(() => this.applyHighlights(this.lastViewport));
+        // 定位完成后滚动到高亮位置（显式计算，scrollIntoView 在 dialog 内不可靠）
+        requestAnimationFrame(() => this.scrollToHighlight());
       }
       if (this.locatePage) {
         requestAnimationFrame(() => {
@@ -1694,6 +1694,16 @@ const PdfReader = {
       div.style.height = `${Math.max(14, (rect.y1 - rect.y0) * scale)}px`;
       host.appendChild(div);
     }
+  },
+
+  scrollToHighlight() {
+    const scroller = document.querySelector(".pdf-viewer-body");
+    const first = this.highlightEl()?.firstElementChild;
+    if (!scroller || !first) return;
+    const rect = first.getBoundingClientRect();
+    const bodyRect = scroller.getBoundingClientRect();
+    const target = scroller.scrollTop + (rect.top - bodyRect.top) - scroller.clientHeight / 2 + rect.height / 2;
+    scroller.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
   },
 
   async step(delta) {

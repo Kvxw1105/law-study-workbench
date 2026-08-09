@@ -75,6 +75,9 @@ def check_path(name: str, findings: list[dict]) -> None:
 def check_content(name: str, findings: list[dict]) -> None:
     if name in ALLOWED_CONTENT_FILES:
         return
+    if name.startswith("app/static/vendor/"):
+        # 第三方库（如 pdf.js 压缩代码）可能含 /home/ 等假路径，不属用户数据泄露
+        return
     try:
         # scan every UTF-8-decodable file (binaries fail decode and are skipped)
         text = (ROOT / name).read_bytes().decode("utf-8")

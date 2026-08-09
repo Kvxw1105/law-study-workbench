@@ -2180,7 +2180,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/locate")
     def locate_source_text(
         source_id: str = Query(..., min_length=8),
-        text: str = Query(..., min_length=2, max_length=200),
+        text: str = Query(..., min_length=2, max_length=1000),
     ) -> dict[str, Any]:
         """在 PDF 中定位一段文本（句子/答案），返回页码与页面坐标矩形（左上原点）。
         PyMuPDF search_for 实现，带进程内缓存；未命中返回 404。"""
@@ -2194,9 +2194,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not path.exists():
             raise HTTPException(status_code=410, detail="本地教材文件已丢失")
 
-        clean = text.replace("\x1f", " ").replace("……", "").replace("\r", " ").replace("\n", " ").strip(" ，,。.;；:：\"“”")
+        clean = (
+            text.replace("\x1f", " ")
+            .replace("……", "")
+            .replace("•", " ")
+            .replace("\r", " ")
+            .replace("\n", " ")
+        )
+        clean = re.sub(r"\s+", " ", clean).strip(" ，,。.;；:：\"“”")
         if len(clean) < 2:
             raise HTTPException(status_code=422, detail="定位文本过短")
+        # 原文过长（如多句拼接的概览卡）时以 6–60 字子句为候选逐句命中
+        if len(clean) > 80:
+            candidates = []
+            for part in re.split(r"[。；;！？!?]", clean):
+                part = part.strip(" ，,。.;；:：\"“”")
+                if 6 <= len(part) <= 60:
+                    candidates.append(part)
+            if not candidates:
+                candidates = [clean[:60]]
+        else:
+            candidates = [clean]
+            for part in re.split(r"[。；;！？!?]", clean):
+                part = part.strip(" ，,。.;；:：\"“”")
+                if 6 <= len(part) <= 60 and part not in candidates:
+                    candidates.append(part)
         cache_key = f"{source_id}|{clean}"
         cached = _locate_cache.get(cache_key)
         if cached:
@@ -2206,12 +2228,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if document is None:
             document = fitz.open(path)
             _locate_docs[source_id] = document
-        # 候选：原文优先，其次按句切分取 10–60 字的子句
-        candidates = [clean]
-        for part in re.split(r"[。；;！？!?]", clean):
-            part = part.strip(" ，,。.;；:：\"“”")
-            if 6 <= len(part) <= 60 and part not in candidates:
-                candidates.append(part)
         for page_index in range(document.page_count):
             page = document[page_index]
             for candidate in candidates:
