@@ -18,7 +18,20 @@ import sys
 import urllib.request
 from pathlib import Path
 
-CHROME_DEFAULT = r"C:\Users\kvxkf\AppData\Local\ms-playwright\chromium-1228\chrome-win64\chrome.exe"
+CHROME_DEFAULT = ""
+
+
+def _chromium_path() -> str:
+    import os
+    env = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH")
+    if env and Path(env).exists():
+        return env
+    base = Path(os.environ.get("LOCALAPPDATA", "")) / "ms-playwright"
+    if base.exists():
+        found = sorted(base.glob("chromium-*/chrome-win64/chrome.exe"))
+        if found:
+            return str(found[-1])
+    return "/usr/bin/chromium"
 
 
 def _post_json(url: str, payload: dict) -> dict:
@@ -54,7 +67,8 @@ def main() -> int:
         print(f"{'PASS' if ok else 'FAIL'}  {name}  {detail}")
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, executable_path=args.chromium)
+        chrome = args.chromium or _chromium_path()
+        browser = p.chromium.launch(headless=True, executable_path=chrome)
         page = browser.new_page()
         errors = []
 

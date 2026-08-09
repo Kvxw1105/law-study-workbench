@@ -5,23 +5,31 @@ make_pdf / chromium-lookup code across test modules.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import fitz
 
 ROOT = Path(__file__).resolve().parents[1]
 
-CHROMIUM_CANDIDATES = (
-    Path(r"C:\Users\kvxkf\AppData\Local\ms-playwright\chromium-1228\chrome-win64\chrome.exe"),
-    Path("/usr/bin/chromium"),
-)
+
+def _discover_playwright_chromium() -> str | None:
+    """Find a local Playwright Chromium without hardcoding user paths."""
+    env = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH")
+    if env and Path(env).exists():
+        return env
+    base = Path(os.environ.get("LOCALAPPDATA", "")) / "ms-playwright"
+    if base.exists():
+        found = sorted(base.glob("chromium-*/chrome-win64/chrome.exe"))
+        if found:
+            return str(found[-1])
+    if Path("/usr/bin/chromium").exists():
+        return "/usr/bin/chromium"
+    return None
 
 
 def chromium_executable() -> str | None:
-    for candidate in CHROMIUM_CANDIDATES:
-        if candidate.exists():
-            return str(candidate)
-    return None
+    return _discover_playwright_chromium()
 
 
 def make_pdf(

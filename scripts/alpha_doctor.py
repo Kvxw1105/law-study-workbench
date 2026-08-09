@@ -55,10 +55,16 @@ def run(cmd: list[str], timeout: int = 120, cwd: Path | None = None, env: dict |
 
 def chromium_env() -> dict:
     """Inject a local Chromium executable if one is known to exist."""
-    for candidate in (
-        r"C:\Users\kvxkf\AppData\Local\ms-playwright\chromium-1228\chrome-win64\chrome.exe",
-        "/usr/bin/chromium",
-    ):
+    env_path = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH")
+    candidates = []
+    if env_path:
+        candidates.append(env_path)
+    base = Path(os.environ.get("LOCALAPPDATA", "")) / "ms-playwright"
+    if base.exists():
+        found = sorted(base.glob("chromium-*/chrome-win64/chrome.exe"))
+        candidates.extend(str(c) for c in found)
+    candidates.append("/usr/bin/chromium")
+    for candidate in candidates:
         if os.path.exists(candidate):
             return {"PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH": candidate}
     return {}

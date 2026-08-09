@@ -28,6 +28,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Guard's own test file intentionally contains secret-shaped samples.
+ALLOWED_CONTENT_FILES = {"tests/test_public_repo_guard.py"}
+
 FORBIDDEN_PATH_PATTERNS = (
     r"\.db$", r"\.sqlite$", r"\.sqlite3$", r"\.sqlite-wal$", r"\.sqlite-shm$",
     r"-wal$", r"-shm$", r"-journal$", r"\.pdf$", r"(^|/)StudyPack.*\.json$",
@@ -70,6 +73,8 @@ def check_path(name: str, findings: list[dict]) -> None:
 
 
 def check_content(name: str, findings: list[dict]) -> None:
+    if name in ALLOWED_CONTENT_FILES:
+        return
     try:
         if not name.lower().endswith((".py", ".md", ".txt", ".json", ".yaml", ".yml",
                                       ".toml", ".html", ".js", ".css", ".sh", ".bat", ".svg")):
