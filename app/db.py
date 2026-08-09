@@ -281,6 +281,25 @@ class Database:
         finally:
             conn.close()
 
+    @contextmanager
+    def connect_immediate(self) -> Iterator[sqlite3.Connection]:
+        """Single-writer transaction: BEGIN IMMEDIATE serializes concurrent
+        writers so check-then-insert sequences (e.g. portable event import
+        idempotency) are race-free. Same commit/rollback contract as connect()."""
+        conn = sqlite3.connect(self.path, timeout=60, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.isolation_level = None  # autocommit; we manage the transaction
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
     def initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:

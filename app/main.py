@@ -1821,7 +1821,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 results.append({"event_id": event.event_id, "status": "conflict", "reason": "invalid_event_time", "detail": str(exc)})
                 continue
 
-            with db.connect() as conn:
+            with db.connect_immediate() as conn:
                 existing_attempt = conn.execute("SELECT id FROM retrieval_attempts WHERE id=?", (event.event_id,)).fetchone()
                 if existing_attempt is not None:
                     duplicates += 1
