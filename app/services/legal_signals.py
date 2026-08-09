@@ -101,7 +101,7 @@ _NUMBER_PATTERN = re.compile(
 _CLAUSE_SPLIT = re.compile(r"(?<=[。！？；.!?;])|\n+")
 _SENTENCE_END = re.compile(r"[。！？.!?]")
 _ENUM_SEPARATOR = re.compile(r"[\s、，,；;]+")
-_SCOPED_NEGATION_PREFIXES = ("并非", "并不", "并未", "未必", "不当然", "不必然", "并不是")
+_SCOPED_NEGATION_PREFIXES = ("并非", "并不", "并未", "未必", "不当然", "不必然", "并不是", "尚未", "还未")
 
 
 def compact(text: str) -> str:
@@ -129,14 +129,17 @@ def _polarity_side(
     for token in sorted(negatives, key=len, reverse=True):
         if token in text:
             if _is_scoped_negation(text, token):
-                scoped_opposite = True
-                continue
+                # e.g. "并非无权" — the scoped negation flips a negative token
+                # to the positive side.
+                return 1, token, True
             return -1, token, scoped_opposite
     for token in sorted(positives, key=len, reverse=True):
         if token in text:
             if _is_scoped_negation(text, token):
-                scoped_opposite = True
-                continue
+                # e.g. "尚未生效" — the scoped negation flips a positive token
+                # to the negative side (previously this silently became
+                # "neutral", missing real conflicts).
+                return -1, token, True
             return 1, token, scoped_opposite
     return 0, None, scoped_opposite
 

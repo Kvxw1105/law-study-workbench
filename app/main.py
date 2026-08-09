@@ -2172,7 +2172,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(Exception)
     async def unhandled_exception(_, exc: Exception):
-        return JSONResponse(status_code=500, content={"detail": f"本地服务发生错误：{exc}"})
+        # Never echo raw exception text to the client (may leak local paths /
+        # internals). Log server-side; return a generic 500.
+        import logging
+        logging.getLogger("law-study").exception("unhandled error", exc_info=exc)
+        return JSONResponse(status_code=500, content={"detail": "本地服务发生错误，请查看服务端日志"})
 
     app.mount("/", StaticFiles(directory=settings.static_dir, html=True), name="static")
     return app

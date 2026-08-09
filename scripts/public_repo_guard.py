@@ -76,10 +76,8 @@ def check_content(name: str, findings: list[dict]) -> None:
     if name in ALLOWED_CONTENT_FILES:
         return
     try:
-        if not name.lower().endswith((".py", ".md", ".txt", ".json", ".yaml", ".yml",
-                                      ".toml", ".html", ".js", ".css", ".sh", ".bat", ".svg")):
-            return
-        text = (ROOT / name).read_text(encoding="utf-8", errors="replace")
+        # scan every UTF-8-decodable file (binaries fail decode and are skipped)
+        text = (ROOT / name).read_bytes().decode("utf-8")
     except Exception:
         return
     for pattern in FORBIDDEN_CONTENT_PATTERNS:

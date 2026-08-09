@@ -70,8 +70,8 @@ def test_check_content_catches_secrets(tmp_path: Path, monkeypatch):
     secrets = [
         "-----BEGIN PRIVATE KEY-----\nMIIE",
         "AKIAIOSFODNN7EXAMPLE",
-        "ghp_0123456789abcdef0123456789abcdef0123456789abcdef",
-        "sk-proj-abcdef0123456789abcdef0123456789abcdef",
+        "ghp_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "sk-proj-abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     ]
     for secret in secrets:
         f = tmp_path / "s.txt"
