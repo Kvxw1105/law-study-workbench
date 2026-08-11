@@ -148,8 +148,15 @@ def _stop_workbench_if_ours():
     if not (launcher.port_listening() and launcher.identity_ok()):
         return
     try:
+        # 中文 Windows 的 netstat 输出为 GBK 编码：必须容忍解码失败，
+        # 否则 UnicodeDecodeError 会让本清理函数静默失效，遗留 8765 服务器
+        # 导致后续用例（含全量测试）因端口占用而失败。
         out = subprocess.run(
-            ["netstat", "-ano"], capture_output=True, text=True, timeout=10
+            ["netstat", "-ano"],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=10,
         ).stdout
         pids = set()
         for line in out.splitlines():
@@ -157,7 +164,8 @@ def _stop_workbench_if_ours():
                 pids.add(line.split()[-1])
         for pid in pids:
             if pid.isdigit():
-                subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True)
+                # /T 一并结束 venv 重定向父进程派生的真实解释器子进程
+                subprocess.run(["taskkill", "/F", "/T", "/PID", pid], capture_output=True)
     except Exception:
         pass
 

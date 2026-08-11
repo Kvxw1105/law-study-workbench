@@ -212,10 +212,18 @@ class OpenAICompatibleScorer:
         try:
             with urllib.request.urlopen(http_request, timeout=90) as response:
                 raw = json.loads(response.read().decode("utf-8"))
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"云端评分请求失败: {exc}") from exc
-        content = raw["choices"][0]["message"]["content"]
-        return Feedback.model_validate_json(content)
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise RuntimeError(f"云端评分请求失败（网络/超时/服务不可达）: {exc}") from exc
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("云端评分返回的不是有效 JSON，请检查接口地址与模型配置") from exc
+        try:
+            content = raw["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise RuntimeError("云端评分响应缺少 choices[0].message.content 字段，请检查接口兼容性") from exc
+        try:
+            return Feedback.model_validate_json(content)
+        except Exception as exc:
+            raise RuntimeError(f"云端评分返回的 JSON 不符合评分契约: {exc}") from exc
 
 
 def provider_from_settings(provider: str, endpoint: str, api_key: str, model: str) -> ScoringProvider:

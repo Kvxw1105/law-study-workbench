@@ -33,8 +33,12 @@ const state = {
   retrievalSubmitting: false,
   unitQuery: "",
   unitFilter: "all",
+  unitSort: "page",
+  unitVisibleCount: 25,
   retrievalQuery: "",
   retrievalFilter: "all",
+  retrievalSort: "due",
+  retrievalVisibleCount: 20,
   sourcePaneCollapsed: false,
   dialogContext: null,
   unitDialogContext: null,
@@ -213,11 +217,23 @@ function setView(view, { focus = true } = {}) {
   $("#viewDescription").textContent = description;
   updateShellUI();
   render();
+  // 深链接：视图同步到 URL hash。刷新保持视图、浏览器后退/前进回到上一个视图、
+  // 具体页面可收藏（#/today、#/library、#/retrieval…）。
+  const targetHash = `#/${view}`;
+  if (location.hash !== targetHash) location.hash = targetHash;
   if (focus) {
     requestAnimationFrame(() => content?.focus({ preventScroll: true }));
     if (window.innerWidth < 820) window.scrollTo({ top: 0, behavior: document.documentElement.dataset.motion === "reduced" ? "auto" : "smooth" });
   }
 }
+
+// 浏览器后退/前进/直接输入 hash：把 URL 恢复成对应视图（hashchange 在 setView
+// 写回同一 hash 时不会再次触发，无循环）。
+window.addEventListener("hashchange", () => {
+  const match = location.hash.match(/^#\/([a-z]+)/);
+  const view = match ? match[1] : "today";
+  if (viewMeta[view] && view !== state.view) setView(view, { focus: false });
+});
 
 async function loadCore({ silent = false } = {}) {
   if (!silent) content.innerHTML = renderLoadingState();
@@ -543,7 +559,7 @@ function renderSourceCard(source) {
 
 function filteredUnits() {
   const query = state.unitQuery.trim().toLowerCase();
-  return state.units.filter((unit) => {
+  const units = state.units.filter((unit) => {
     const matchesQuery = !query || `${unit.title} ${unit.body} ${unit.objective_type}`.toLowerCase().includes(query);
     const matchesFilter = state.unitFilter === "all"
       || (state.unitFilter === "approved" && unit.status === "approved")
@@ -552,6 +568,21 @@ function filteredUnits() {
       || (state.unitFilter === "cards" && Number(unit.retrieval_count || 0) > 0);
     return matchesQuery && matchesFilter;
   });
+  const sorted = [...units];
+  if (state.unitSort === "title") {
+    sorted.sort((a, b) => a.title.localeCompare(b.title, "zh") || a.page_start - b.page_start);
+  } else if (state.unitSort === "status") {
+    sorted.sort((a, b) => Number(a.status !== "approved") - Number(b.status !== "approved") || a.page_start - b.page_start);
+  } else if (state.unitSort === "cards") {
+    sorted.sort((a, b) => Number(b.retrieval_count || 0) - Number(a.retrieval_count || 0) || a.page_start - b.page_start);
+  } else {
+    sorted.sort((a, b) => a.page_start - b.page_start);
+  }
+  return sorted;
+}
+
+function unitSortLabel() {
+  return { page: "按教材页码", title: "按标题", status: "按确认状态", cards: "按卡片数" }[state.unitSort] || "按教材页码";
 }
 
 function renderSelectedSource(source) {
@@ -588,6 +619,12 @@ function renderSelectedSource(source) {
           </div>
           <div class="unit-toolbar-controls">
             <label class="search-field"><span aria-hidden="true">⌕</span><input id="unitSearch" type="search" value="${escapeHtml(state.unitQuery)}" placeholder="搜索标题、规则或术语" autocomplete="off"></label>
+            <select id="unitSort" aria-label="排序知识单元">
+              <option value="page" ${state.unitSort === "page" ? "selected" : ""}>按教材页码</option>
+              <option value="title" ${state.unitSort === "title" ? "selected" : ""}>按标题</option>
+              <option value="status" ${state.unitSort === "status" ? "selected" : ""}>按确认状态</option>
+              <option value="cards" ${state.unitSort === "cards" ? "selected" : ""}>按卡片数</option>
+            </select>
             <select id="unitFilter" aria-label="筛选知识单元">
               <option value="all" ${state.unitFilter === "all" ? "selected" : ""}>全部单元</option>
               <option value="approved" ${state.unitFilter === "approved" ? "selected" : ""}>已确认</option>
@@ -597,9 +634,10 @@ function renderSelectedSource(source) {
             </select>
           </div>
         </div>
-        <div class="unit-result-meta" id="unitResultMeta"><span>显示 ${units.length} / ${state.units.length} 个单元</span><span>按教材页码排序</span></div>
+        <div class="unit-result-meta" id="unitResultMeta"><span>显示 ${Math.min(units.length, state.unitVisibleCount)} / ${state.units.length} 个单元</span><span>${unitSortLabel()}</span></div>
         <div class="unit-list" id="unitList">
-          ${units.length ? units.map(renderUnitCard).join("") : `<div class="empty-state inline-empty"><div class="empty-symbol">⌕</div><h3>没有匹配的知识单元</h3><p>调整搜索词或筛选条件后再试。</p></div>`}
+          ${units.length ? units.slice(0, state.unitVisibleCount).map(renderUnitCard).join("") : `<div class="empty-state inline-empty"><div class="empty-symbol">⌕</div><h3>没有匹配的知识单元</h3><p>调整搜索词或筛选条件后再试。</p></div>`}
+          ${units.length > state.unitVisibleCount ? `<button class="ghost-button load-more-button" data-action="show-more-units" type="button">显示更多单元（还有 ${units.length - state.unitVisibleCount} 个）</button>` : ""}
         </div>
       </section>` : `
       <div class="processing-panel">
@@ -613,6 +651,8 @@ function renderUnitCard(unit, index = 0) {
   const tone = unit.status === "approved" ? "good" : "warn";
   const status = unit.status === "approved" ? "已确认" : "待确认";
   const retrievalCount = Number(unit.retrieval_count || 0);
+  // 正文超过约 5 行（按行宽 40 字估算）才折叠并给出“展开全文”，短单元直接完整显示
+  const longBody = unit.body.length > 200;
   return `
     <article class="unit-card">
       <div class="unit-index">${String(index + 1).padStart(2, "0")}</div>
@@ -624,7 +664,10 @@ function renderUnitCard(unit, index = 0) {
           </div>
           ${unit.mastery_status ? `<span class="mastery-badge">${escapeHtml(unit.mastery_status)}</span>` : ""}
         </header>
-        <p>${escapeHtml(unit.body)}</p>
+        <div class="unit-body-clamp ${longBody ? "is-clamped" : ""}">
+          <p>${escapeHtml(unit.body)}</p>
+          ${longBody ? `<button class="body-expand-toggle" data-action="toggle-unit-body" data-unit-id="${unit.id}" type="button">展开全文</button>` : ""}
+        </div>
         <div class="unit-evidence-strip">
           <span><strong>${Number(unit.flashcard_count || 0)}</strong> 闪卡</span>
           <span><strong>${Number(unit.cloze_count || 0)}</strong> 挖空</span>
@@ -904,7 +947,7 @@ function renderRetrieval() {
 
 function filteredRetrievalItems() {
   const query = state.retrievalQuery.trim().toLowerCase();
-  return state.retrievalAll.filter((item) => {
+  const filtered = state.retrievalAll.filter((item) => {
     const matchesQuery = !query || `${item.prompt} ${item.answer || ""} ${item.unit_title} ${item.original_name}`.toLowerCase().includes(query);
     const dueNow = item.due_at ? new Date(item.due_at).getTime() <= Date.now() : true;
     const matchesFilter = state.retrievalFilter === "all"
@@ -914,6 +957,21 @@ function filteredRetrievalItems() {
       || (state.retrievalFilter === "new" && Boolean(item.is_new));
     return matchesQuery && matchesFilter;
   });
+  const sorted = [...filtered];
+  if (state.retrievalSort === "title") {
+    sorted.sort((a, b) => a.unit_title.localeCompare(b.unit_title, "zh") || a.prompt.localeCompare(b.prompt, "zh"));
+  } else if (state.retrievalSort === "created") {
+    sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  } else {
+    // 默认：到期优先，同到期按创建时间（新卡先看）
+    sorted.sort((a, b) => (a.due_at ? new Date(a.due_at).getTime() : 0) - (b.due_at ? new Date(b.due_at).getTime() : 0)
+      || new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }
+  return sorted;
+}
+
+function retrievalSortLabel() {
+  return { due: "到期优先", created: "按创建时间", title: "按单元标题" }[state.retrievalSort] || "到期优先";
 }
 
 function renderRetrievalDashboard() {
@@ -968,9 +1026,15 @@ function renderRetrievalDashboard() {
           ].map(([value, label]) => `<button class="segment ${state.retrievalFilter === value ? "is-active" : ""}" data-action="filter-retrieval" data-filter="${value}" type="button">${label}</button>`).join("")}
         </div>
         <label class="search-field card-search"><span aria-hidden="true">⌕</span><input id="retrievalSearch" type="search" value="${escapeHtml(state.retrievalQuery)}" placeholder="搜索题面、答案或教材" autocomplete="off"></label>
+        <select id="retrievalSort" aria-label="排序卡片">
+          <option value="due" ${state.retrievalSort === "due" ? "selected" : ""}>到期优先</option>
+          <option value="created" ${state.retrievalSort === "created" ? "selected" : ""}>按创建时间</option>
+          <option value="title" ${state.retrievalSort === "title" ? "selected" : ""}>按单元标题</option>
+        </select>
       </div>
       <div class="retrieval-manage-list" id="retrievalManageList">
-        ${visibleItems.length ? visibleItems.map(renderRetrievalManageItem).join("") : `<div class="empty-state inline-empty"><div class="empty-symbol">卡</div><h3>没有匹配的卡片</h3><p>调整筛选条件，或前往教材库生成新的挖空与闪卡。</p></div>`}
+        ${visibleItems.length ? visibleItems.slice(0, state.retrievalVisibleCount).map(renderRetrievalManageItem).join("") : `<div class="empty-state inline-empty"><div class="empty-symbol">卡</div><h3>没有匹配的卡片</h3><p>调整筛选条件，或前往教材库生成新的挖空与闪卡。</p></div>`}
+        ${visibleItems.length > state.retrievalVisibleCount ? `<button class="ghost-button load-more-button" data-action="show-more-retrieval" type="button">显示更多卡片（还有 ${visibleItems.length - state.retrievalVisibleCount} 张）</button>` : ""}
       </div>
     </section>`;
   bindRetrievalActions();
@@ -1123,7 +1187,7 @@ function renderModel() {
     <section class="model-brief">
       <div class="model-brief-copy">
         <div class="focus-kicker"><span class="evidence-dot"></span>本地学习证据画像</div>
-        <h2>${metrics.attempts ? `当前画像来自 ${metrics.attempts} 次完整闭卷和 ${retrievalMetrics.attempts || 0} 次卡片提取。` : "当前还没有足够的真实作答证据。"}</h2>
+        <h2>${metrics.attempts ? `当前画像来自 ${metrics.attempts} 次完整闭卷和 ${retrievalMetrics.attempts || 0} 次卡片作答。` : "当前还没有足够的真实作答证据。"}</h2>
         <p>${escapeHtml(model.model_note || "系统只依据真实作答、提示使用、置信度和复测记录更新。")}</p>
       </div>
       <aside class="calibration-card ${calibration.tone}">
@@ -1138,7 +1202,7 @@ function renderModel() {
       <article><span>平均覆盖</span><strong>${Number(metrics.average_score || 0).toFixed(0)}</strong><small>当前本地评分结果</small></article>
       <article><span>平均置信度</span><strong>${Number(metrics.average_confidence || 0).toFixed(0)}%</strong><small>用于识别高置信度错误</small></article>
       <article><span>平均用时</span><strong>${formatDuration(metrics.average_elapsed_ms || 0)}</strong><small>观察提取速度变化</small></article>
-      <article><span>卡片提取</span><strong>${retrievalMetrics.attempts || 0}</strong><small>挖空与闪卡独立记录</small></article>
+      <article><span>卡片作答</span><strong>${retrievalMetrics.attempts || 0}</strong><small>共 ${state.retrievalSummary?.total || 0} 张活动卡 · 独立记录</small></article>
       <article><span>卡片平均分</span><strong>${Number(retrievalMetrics.average_score || 0).toFixed(0)}</strong><small>成功 ${retrievalMetrics.successful_count || 0} · 遗忘 ${retrievalMetrics.again_count || 0}</small></article>
     </section>
 
@@ -1310,14 +1374,31 @@ function bindCommonActions() {
     state.sourcePaneCollapsed = !state.sourcePaneCollapsed;
     renderStudy();
   }));
+  document.querySelectorAll('[data-action="show-more-units"]').forEach((button) => button.addEventListener("click", () => {
+    state.unitVisibleCount += 25;
+    updateUnitListView();
+  }));
+  document.querySelectorAll('[data-action="toggle-unit-body"]').forEach((button) => button.addEventListener("click", () => {
+    const clamp = button.closest(".unit-body-clamp");
+    if (!clamp) return;
+    const expanded = clamp.classList.toggle("is-expanded");
+    button.textContent = expanded ? "收起全文" : "展开全文";
+  }));
+  document.querySelectorAll('[data-action="show-more-retrieval"]').forEach((button) => button.addEventListener("click", () => {
+    state.retrievalVisibleCount += 20;
+    updateRetrievalListView();
+  }));
 }
 
 function updateUnitListView() {
   const units = filteredUnits();
   const list = $("#unitList");
   const meta = $("#unitResultMeta");
-  if (list) list.innerHTML = units.length ? units.map(renderUnitCard).join("") : `<div class="empty-state inline-empty"><div class="empty-symbol">⌕</div><h3>没有匹配的知识单元</h3><p>调整搜索词或筛选条件后再试。</p></div>`;
-  if (meta) meta.innerHTML = `<span>显示 ${units.length} / ${state.units.length} 个单元</span><span>按教材页码排序</span>`;
+  if (list) {
+    list.innerHTML = (units.length ? units.slice(0, state.unitVisibleCount).map(renderUnitCard).join("") : `<div class="empty-state inline-empty"><div class="empty-symbol">⌕</div><h3>没有匹配的知识单元</h3><p>调整搜索词或筛选条件后再试。</p></div>`)
+      + (units.length > state.unitVisibleCount ? `<button class="ghost-button load-more-button" data-action="show-more-units" type="button">显示更多单元（还有 ${units.length - state.unitVisibleCount} 个）</button>` : "");
+  }
+  if (meta) meta.innerHTML = `<span>显示 ${Math.min(units.length, state.unitVisibleCount)} / ${state.units.length} 个单元</span><span>${unitSortLabel()}</span>`;
   bindCommonActions();
 }
 
@@ -1341,10 +1422,17 @@ function bindLibraryActions() {
 
   $("#unitSearch")?.addEventListener("input", (event) => {
     state.unitQuery = event.target.value;
+    state.unitVisibleCount = 25;
     updateUnitListView();
   });
   $("#unitFilter")?.addEventListener("change", (event) => {
     state.unitFilter = event.target.value;
+    state.unitVisibleCount = 25;
+    updateUnitListView();
+  });
+  $("#unitSort")?.addEventListener("change", (event) => {
+    state.unitSort = event.target.value;
+    state.unitVisibleCount = 25;
     updateUnitListView();
   });
 
@@ -2186,8 +2274,11 @@ function updateRetrievalListView() {
   const items = filteredRetrievalItems();
   const list = $("#retrievalManageList");
   const count = $("#retrievalResultCount");
-  if (list) list.innerHTML = items.length ? items.map(renderRetrievalManageItem).join("") : `<div class="empty-state inline-empty"><div class="empty-symbol">卡</div><h3>没有匹配的卡片</h3><p>调整筛选条件，或前往教材库生成新的挖空与闪卡。</p></div>`;
-  if (count) count.textContent = `${items.length} / ${state.retrievalSummary?.total || 0} 张`;
+  if (list) {
+    list.innerHTML = (items.length ? items.slice(0, state.retrievalVisibleCount).map(renderRetrievalManageItem).join("") : `<div class="empty-state inline-empty"><div class="empty-symbol">卡</div><h3>没有匹配的卡片</h3><p>调整筛选条件，或前往教材库生成新的挖空与闪卡。</p></div>`)
+      + (items.length > state.retrievalVisibleCount ? `<button class="ghost-button load-more-button" data-action="show-more-retrieval" type="button">显示更多卡片（还有 ${items.length - state.retrievalVisibleCount} 张）</button>` : "");
+  }
+  if (count) count.textContent = `${Math.min(items.length, state.retrievalVisibleCount)} / ${state.retrievalSummary?.total || 0} 张`;
   bindRetrievalManageActions();
 }
 
@@ -2216,10 +2307,17 @@ function bindRetrievalActions() {
   bindRetrievalManageActions({ includeStart: false });
   document.querySelectorAll('[data-action="filter-retrieval"]').forEach((button) => button.addEventListener("click", () => {
     state.retrievalFilter = button.dataset.filter;
+    state.retrievalVisibleCount = 20;
     renderRetrievalDashboard();
   }));
+  $("#retrievalSort")?.addEventListener("change", (event) => {
+    state.retrievalSort = event.target.value;
+    state.retrievalVisibleCount = 20;
+    updateRetrievalListView();
+  });
   $("#retrievalSearch")?.addEventListener("input", (event) => {
     state.retrievalQuery = event.target.value;
+    state.retrievalVisibleCount = 20;
     updateRetrievalListView();
   });
 
@@ -2576,6 +2674,10 @@ function bindGlobalShellActions() {
 }
 
 applyUiPreferences();
+// 深链接：刷新/直接访问 #/xxx 时恢复对应视图（setView 会同步 banner 与导航高亮；
+// 数据由随后的 loadCore 加载后再次渲染）
+const initialHash = location.hash.match(/^#\/([a-z]+)/);
+if (initialHash && viewMeta[initialHash[1]] && initialHash[1] !== "today") setView(initialHash[1], { focus: false });
 bindGlobalShellActions();
 bindPdfViewerActions();
 window.loadCore = loadCore;

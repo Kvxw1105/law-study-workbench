@@ -648,7 +648,16 @@ button:disabled,
 .unit-card-body { min-width: 0; }
 .unit-card-head { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
 .unit-card h3 { margin: 10px 0 0; font-size: 1.02rem; line-height: 1.4; }
-.unit-card p { margin: 12px 0 0; color: var(--text-2); font-size: .75rem; line-height: 1.78; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: clip; }
+.unit-card p { margin: 0; color: var(--text-2); font-size: .75rem; line-height: 1.78; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: clip; }
+/* 单元正文折叠：默认 4 行截断 + 渐变遮罩，展开后显示全文 */
+.unit-body-clamp { position: relative; margin-top: 12px; }
+.unit-body-clamp.is-clamped::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2.6em; pointer-events: none; background: linear-gradient(transparent, var(--surface-2)); }
+.unit-body-clamp.is-expanded::after { display: none; }
+.unit-body-clamp.is-expanded p { -webkit-line-clamp: unset; overflow: visible; }
+.body-expand-toggle { margin-top: 6px; padding: 2px 0; border: 0; background: none; color: var(--accent); font-size: .7rem; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.body-expand-toggle:hover { opacity: .8; }
+.body-expand-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.load-more-button { width: 100%; margin-top: 8px; padding: 10px; }
 .unit-evidence-strip { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 14px; padding: 11px 0; border-top: 1px solid var(--line-1); border-bottom: 1px solid var(--line-1); color: var(--text-3); font-size: .68rem; }
 .unit-evidence-strip strong { color: var(--text-1); }
 .unit-card-foot { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-top: 14px; }
@@ -1263,7 +1272,7 @@ html[data-motion="reduced"] *::after {
   --paper-text: #242721;
   --text-1: #f1eee5;
   --text-2: #b9b9af;
-  --text-3: #81877f;
+  --text-3: #8d938b;
   --line-1: rgba(226, 218, 196, 0.11);
   --line-2: rgba(226, 218, 196, 0.20);
   --line-3: rgba(226, 218, 196, 0.32);
@@ -1318,7 +1327,7 @@ html[data-theme="light"] {
   --paper-text: #20231f;
   --text-1: #1b201d;
   --text-2: #545b55;
-  --text-3: #7e837c;
+  --text-3: #5d655e;
   --line-1: rgba(42, 47, 43, 0.12);
   --line-2: rgba(42, 47, 43, 0.20);
   --line-3: rgba(42, 47, 43, 0.31);
@@ -1546,6 +1555,16 @@ h1 {
   box-shadow: 0 8px 22px var(--accent-soft), inset 0 1px rgba(255,255,255,.18);
 }
 .primary-button:hover { transform: translateY(-1px); filter: saturate(1.04) brightness(1.03); }
+.primary-button:active,
+.secondary-button:active,
+.ghost-button:active,
+.danger-button:active { transform: translateY(1px) scale(.98); filter: brightness(.94); }
+/* 练习答案揭示：淡入上移，解释“答案出现了”这一状态变化 */
+.answer-reveal { animation: reveal-enter var(--duration-med) var(--ease-standard) both; }
+@keyframes reveal-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .secondary-button { border-color: var(--line-2); background: color-mix(in srgb, var(--surface-2) 74%, transparent); }
 .ghost-button { border-color: transparent; border-bottom-color: var(--line-2); border-radius: 0; }
 .ghost-button:hover { border-bottom-color: var(--accent-line); background: var(--accent-soft); }
