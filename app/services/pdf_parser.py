@@ -4,7 +4,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 from uuid import uuid4
 
 import fitz
@@ -36,6 +36,72 @@ def normalize_page_text(text: str) -> str:
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = rejoin_cjk_line_breaks(text)
     return text.strip()
+
+
+# 进程内缓存：{id(文档对象): (文档强引用, {页码: [(归一化 span 文本, bbox), ...]})}
+# 句子跨行时 search_for 精确匹配会失败，需要按 span 做空白归一化定位；
+# get_text("dict") 较慢，命中页面后缓存可避免重复请求重复提取。
+# 同时持有文档强引用：防止文档被 GC 后 id() 复用导致脏缓存。
+_NORM_SPAN_CACHE: dict[int, tuple[Any, dict[int, list[tuple[str, tuple[float, float, float, float]]]]]] = {}
+_NORM_SPAN_CACHE_LIMIT = 6  # 文档级缓存上限（LRU 语义：超限淘汰最旧）
+
+
+def _page_norm_spans(page: fitz.Page) -> list[tuple[str, tuple[float, float, float, float]]]:
+    """返回页面所有 span 的空白归一化文本与 bbox（跨文档、跨请求缓存）。"""
+    doc = page.parent
+    doc_key = id(doc)
+    cached_doc = _NORM_SPAN_CACHE.get(doc_key)
+    if cached_doc is None:
+        cached_doc = (doc, {})
+        _NORM_SPAN_CACHE[doc_key] = cached_doc
+        if len(_NORM_SPAN_CACHE) > _NORM_SPAN_CACHE_LIMIT:
+            _NORM_SPAN_CACHE.pop(next(iter(_NORM_SPAN_CACHE)))
+    _doc_ref, page_cache = cached_doc
+    cached = page_cache.get(page.number)
+    if cached is not None:
+        return cached
+    spans: list[tuple[str, tuple[float, float, float, float]]] = []
+    for block in page.get_text("dict").get("blocks", []):
+        for line in block.get("lines", []):
+            for span in line.get("spans", []):
+                norm = re.sub(r"\s+", "", span.get("text", ""))
+                if norm:
+                    spans.append((norm, tuple(span["bbox"])))
+    page_cache[page.number] = spans
+    return spans
+
+
+def search_text_rects(page: fitz.Page, candidate: str) -> list[dict[str, float]] | None:
+    """在单个 PDF 页面中定位一段文本，返回左上原点坐标系矩形。
+
+    先走 PyMuPDF 精确 search_for；句子跨换行/含其他空白差异时精确匹配会落空，
+    再按 span 做空白归一化匹配：拼接归一化全文找到命中区间，映射回覆盖该区间的
+    span bbox（跨行句子会得到多行矩形）。找不到返回 None。
+    """
+    exact = page.search_for(candidate)
+    if exact:
+        return [{"x0": r.x0, "y0": r.y0, "x1": r.x1, "y1": r.y1} for r in exact[:8]]
+    norm_needle = re.sub(r"\s+", "", candidate)
+    if len(norm_needle) < 2:
+        return None
+    spans = _page_norm_spans(page)
+    if not spans:
+        return None
+    full = ""
+    starts: list[int] = []
+    for norm, _bbox in spans:
+        starts.append(len(full))
+        full += norm
+    pos = full.find(norm_needle)
+    if pos < 0:
+        return None
+    end = pos + len(norm_needle)
+    rects = [
+        {"x0": bbox[0], "y0": bbox[1], "x1": bbox[2], "y1": bbox[3]}
+        for (norm, bbox), start in zip(spans, starts)
+        if start < end and start + len(norm) > pos
+    ]
+    return rects or None
 
 
 def parse_pdf(
