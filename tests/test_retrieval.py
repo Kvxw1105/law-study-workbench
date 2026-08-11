@@ -461,3 +461,55 @@ def test_archived_generated_card_is_not_silently_reactivated(client: TestClient)
     assert payload["skipped_archived"] == 1
     assert payload["items"] == []
     assert client.get("/api/retrieval/summary").json()["total"] == 0
+
+
+# ---- 题面泄漏答案防线（历史回归：旧模板曾把句子前半塞进题面导致闭卷失效）----
+
+from app.services.retrieval import _prompt_leaks_answer, _safe_flashcard_prompt, _flashcard_prompt
+
+
+def test_prompt_leaks_answer_detects_full_answer_in_prompt():
+    prompt = "请完整说明「X」中的规则：这些责任形式可单独适用，也可以合并适用……"
+    answer = "这些责任形式可单独适用，也可以合并适用。"
+    assert _prompt_leaks_answer(prompt, answer) is True
+
+
+def test_prompt_leaks_answer_allows_legit_topics():
+    assert _prompt_leaks_answer("什么是善意取得？", "善意取得是指……的取得方式。") is False
+    assert _prompt_leaks_answer("善意取得的构成要件有哪些？", "善意取得应当具备下列条件……") is False
+    # 答案过短（<4 字）不触发，避免误伤短答案
+    assert _prompt_leaks_answer("什么是期限？", "期限") is False
+
+
+def test_generated_flashcards_never_leak_answer_into_prompt():
+    """生成器防线：任何生成的闪卡题面不得包含答案原文（旧模板回归场景）。"""
+    # 模拟旧模板翻车场景：短句 + 不带信号词 → 旧代码会生成“…中的规则：<整句>……”
+    body = "这些责任形式可单独适用，也可以合并适用。民事责任的形式是指违法行为人承担民事责任的具体方式。"
+    drafts = generate_retrieval_items(
+        title="民事责任的形式",
+        body=body,
+        item_types=["flashcard"],
+        max_per_type=3,
+    )
+    assert drafts
+    for draft in drafts:
+        assert not _prompt_leaks_answer(draft.prompt, draft.answer), (
+            f"题面泄漏答案: {draft.prompt!r} <= {draft.answer!r}"
+        )
+
+
+def test_safe_flashcard_prompt_never_contains_sentence():
+    sentence = "这些责任形式可单独适用，也可以合并适用。"
+    prompt = _safe_flashcard_prompt("民事责任的形式", sentence)
+    assert sentence not in prompt
+    assert prompt.startswith("用自己的话复述：")
+
+
+def test_flashcard_topic_rejects_weak_words():
+    """弱词（主要/可以/应当…）不得成为提问主题，避免“什么是主要？”类无语义题面。"""
+    from app.services.retrieval import _flashcard_topic
+    assert _flashcard_topic("主要是指狭义的法律渊源，即法的形式渊源。") is None
+    assert _flashcard_topic("可以依法取得其在有限合伙企业中的资格。") is None
+    # 真实主题不受影响
+    topic = _flashcard_topic("善意取得应当具备下列条件：处分人为无处分权人")
+    assert topic and "善意取得" in topic

@@ -66,6 +66,19 @@ def _clean_text(text: str) -> str:
     text = text.replace("\u00a0", " ").replace("\r\n", "\n")
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{2,}", "\n", text)
+    # 先按行移除版权水印行，再做 CJK 跨行断字重组——否则水印行会被
+    # rejoin 无缝粘进正文句，把前后正文粘成怪句并污染句子内容。
+    lines = [line for line in text.split("\n") if not _WATERMARK.search(line)]
+    text = "\n".join(lines)
+    # 章节/小标题行（“第一节 民法的渊源”“【本节知识点详述】”“一、民法渊源概述”）
+    # 行尾补句号：否则行尾汉字紧邻下一行汉字会被 rejoin 当成跨行断字粘进正文句，
+    # 生成卡片时把标题/目录行混进题面（历史卡“【本节知识点详述】…”“西政，等你。”即源于此）。
+    text = re.sub(
+        r"^(?:第[一二三四五六七八九十百]+[编篇章节部分]|【[^】\n]{1,30}】|[一二三四五六七八九十]+、)[^，。；:：\n]{0,40}$",
+        lambda match: match.group(0) + "。",
+        text,
+        flags=re.MULTILINE,
+    )
     text = rejoin_cjk_line_breaks(text)
     return text.strip()
 
@@ -78,6 +91,14 @@ def split_sentences(text: str) -> list[str]:
     for part in _SENTENCE_SPLIT.split(cleaned):
         sentence = re.sub(r"\s+", " ", part).strip(" \t\n")
         if len(sentence) < 8:
+            continue
+        if _WATERMARK.search(sentence) and "\n" in part:
+            # 水印行夹在正文行之间（无句号）会把前后正文粘成超长怪句：
+            # 按行拆开，让正文句独立成句，水印片段随后由调用方过滤。
+            for line_part in part.split("\n"):
+                line = re.sub(r"\s+", " ", line_part).strip()
+                if len(line) >= 8:
+                    sentences.append(line)
             continue
         if len(sentence) > 260:
             clauses = [item.strip() for item in re.split(r"(?<=[，,：:])", sentence) if item.strip()]
@@ -95,33 +116,42 @@ def split_sentences(text: str) -> list[str]:
     return sentences
 
 
-def _sentence_score(sentence: str, index: int) -> tuple[int, int, int]:
-    markers = (
-        "是指",
-        "包括",
-        "应当",
-        "必须",
-        "不得",
-        "可以",
-        "有权",
-        "无权",
-        "条件",
-        "要件",
-        "例外",
-        "除外",
-        "责任",
-        "效力",
-        "requires",
-        "includes",
-        "must",
-        "shall",
-        "may",
-        "means",
-    )
-    marker_score = sum(1 for marker in markers if marker.lower() in sentence.lower())
-    length_score = 2 if 20 <= len(sentence) <= 150 else 1
-    early_score = max(0, 4 - index)
-    return marker_score, length_score, early_score
+def _sentence_score(sentence: str, index: int) -> tuple[int, int]:
+    """句子“可出题性”评分（本地启发式，越高越值得做挖空/闪卡）。
+
+    结构信号权重：
+      - 规则句（情态动词 + 法律后果/行为）……4 分
+      - 法条引用（《X》第N条）………………3 分
+      - 数字/期限/期间（X日/周岁/年以上）…2 分
+      - 例外/但书………………………………2 分
+      - 要件/条件列举 ((1)(2)(3))…………2 分
+      - 高价值判定词密度……………………每词 1 分
+      - 长度 20–160 适中……………………2 分
+    同分时正文顺序靠前者优先（-index 作为次级键）。
+    """
+    score = 0
+    # 章节/小标题行（“第X节…”“【本节…】”“一、…概述”）不是可出题内容，直接压到最低
+    if re.match(r"^(?:第[一二三四五六七八九十百]+[编篇章节部分]|【[^】]{1,30}】|[一二三四五六七八九十]+、)", sentence):
+        return -10, -index
+    if re.search(r"(?:应当|必须|不得|可以|有权|无权|须)[\u4e00-\u9fff]{0,8}(?:的|为|是|成立|生效|承担|取得|转让|登记|交付|撤销|解除|无效|有效|赔偿)", sentence):
+        score += 4
+    elif re.search(r"应当|必须|不得|可以|有权|无权|须", sentence):
+        score += 3
+    if re.search(r"《[^》]{1,16}》第[一二三四五六七八九十百零0-9]+条", sentence) or re.search(r"(?<!第)第[一二三四五六七八九十百零0-9]+条", sentence):
+        score += 3
+    if re.search(r"[\d一二三四五六七八九十百]+(?:周岁|日内|个月|个月以内|年以上|年以下|年以内|小时|日|个月)", sentence):
+        score += 2
+    if re.search(r"但是|但书|除外|例外|除非|不得.{0,12}但", sentence):
+        score += 2
+    if re.search(r"\([0-9一二三四五六七八九十]+\)", sentence):
+        score += 2
+    markers = ("是指", "系指", "包括", "条件", "要件", "标准", "期限", "效力", "分为", "种类", "属于")
+    score += sum(1 for marker in markers if marker in sentence)
+    if 20 <= len(sentence) <= 160:
+        score += 2
+    elif len(sentence) < 20:
+        score += 1
+    return score, -index
 
 
 def important_sentences(text: str, limit: int = 5) -> list[str]:
@@ -139,17 +169,47 @@ def _flashcard_topic(sentence: str) -> str | None:
     """从句子开头提取一个可作为提问主题的短语（2–16 字）。"""
     match = re.match(r"^([\u4e00-\u9fffA-Za-z0-9]{2,16}?)(?:是|指|即|包括|分为|应当|必须|不得|须|与|同|对|在|于|作为|属于|具有|可以|需要|只要|只有|当|除|依|根|按|就|从|以|由|而|并|也|都|则|还)", sentence)
     if match:
-        return match.group(1)
+        return _meaningful_topic(match.group(1))
     first = re.match(r"^([\u4e00-\u9fffA-Za-z0-9]{2,16}?)[，,：:。；;]", sentence)
     if first:
-        return first.group(1)
+        return _meaningful_topic(first.group(1))
     return None
+
+
+# 弱词/虚词单独作为主题时题面无语义（如“什么是主要？”“什么是概述？”），应回退到标题
+_WEAK_TOPICS = {"主要", "可以", "应当", "必须", "一般", "直接", "间接", "根据", "包括", "分为", "同时", "此外", "首先", "其次", "最后", "所谓", "就是", "概述", "概念", "特征", "类型", "种类", "意义", "作用", "方式", "内容"}
+
+
+def _meaningful_topic(topic: str | None) -> str | None:
+    if topic is None:
+        return None
+    stripped = topic.strip(" ，,。.:：;；、")
+    if stripped in _WEAK_TOPICS or len(stripped) < 2:
+        return None
+    return stripped
+
+
+def _clean_title(title: str) -> str:
+    """去掉标题的章节前缀（“第二节 民法的性质”→“民法的性质”），
+    避免 fallback 时把“第二节”带进题面；弱词标题（“概述”“概念”…）
+    同样视为无主题，返回空让调用方使用兜底。"""
+    cleaned = re.sub(r"^(?:第[一二三四五六七八九十百]+[编篇章节部分])", "", title or "").strip(" ：:、。")
+    if not cleaned:
+        return ""
+    if cleaned in _WEAK_TOPICS:
+        return ""
+    return cleaned
 
 
 def _flashcard_prompt(title: str, sentence: str, index: int) -> str:
     # 9 类提问模板：先按信号词匹配提问角度，再提取主题。
     # 兜底不把原文贴进 prompt（避免“背课文”），只问主题。
-    topic = _flashcard_topic(sentence) or title.strip(" ：:、。") or "本部分内容"
+    topic = _flashcard_topic(sentence) or _clean_title(title) or "本部分内容"
+    # 法条引用优先：《民法典》第187条 → 直接问该条内容（数字/期限类规则常落在法条）
+    law_ref = re.search(r"(《[^》]{1,16}》)?第([一二三四五六七八九十百零0-9]+)条", sentence)
+    if law_ref:
+        law = law_ref.group(1) or ""
+        return f"{law}第{law_ref.group(2)}条规定了什么内容？"
     templates: list[tuple[re.Pattern, Callable[[str], str]]] = [
         (re.compile(r"是指|系指|即|定义为|叫做"), lambda t: f"什么是{t}？"),
         (re.compile(r"要件|应当具备|须具备|必须具备|构成条件"), lambda t: f"{t}的构成要件有哪些？"),
@@ -163,6 +223,9 @@ def _flashcard_prompt(title: str, sentence: str, index: int) -> str:
     for pattern, formatter in templates:
         if pattern.search(sentence):
             return formatter(topic)
+    # 数字/期限句（非法条）→ 问时间/期限要求
+    if re.search(r"[\d一二三四五六七八九十百]+(?:周岁|日内|个月|年以上|年以下|年以内|小时|日|年)", sentence):
+        return f"{topic}的时间或期限要求是什么？"
 
     english = re.match(
         r"^(.{3,60}?)\s+(requires|includes|means|must|shall|may)\s+(.+)$",
@@ -253,7 +316,7 @@ def find_cloze_span(sentence: str, title: str) -> str | None:
     quoted = _candidate_quoted(sentence)
     if quoted:
         return quoted
-    clean_title = title.strip(" ：:、。")
+    clean_title = _clean_title(title)
     if 2 <= len(clean_title) <= 24 and clean_title in sentence:
         return clean_title
     after_marker = _candidate_after_marker(sentence)
@@ -272,55 +335,82 @@ ANSWER_SEP = "\x1f"
 
 
 def find_cloze_spans(sentence: str, title: str, max_spans: int = 3) -> list[str]:
-    """多空挖空候选：收集引号内容、章节标题、冒号/判定词后短语、法律术语，
-    去重、去包含、优先判定词短语，最多 max_spans 个。"""
-    candidates: list[str] = []
-    quoted = re.findall(r"[“\"'『]([^”\"'』]{2,24})[”\"'』]", sentence)
-    candidates.extend(quoted)
-    clean_title = title.strip(" ：:、。")
+    """多空挖空候选：按信息量分级收集（引号/标题/数字期限 > 判定词后短语 >
+    法律术语 > 句尾兜底），去重、去包含（保留高优先级）、过滤弱词碎片，
+    并保证相邻空位在句中有足够间距（连续挖空破坏可读性）。"""
+    generic = {
+        "以下条件", "下列条件", "具备以下条件", "具备下列条件", "具备的条件", "有关规定",
+        "法律规定", "依法处理", "相应责任", "相关责任", "下列情形", "以下情形",
+        "本条", "前款", "本款",
+    }
+    candidates: list[tuple[str, int]] = []
+
+    def add(candidate: str, priority: int, max_len: int = 42) -> None:
+        candidate = candidate.strip(" ，,。.;；:：、")
+        if len(candidate) < 2 or len(candidate) > max_len:
+            return
+        if candidate in generic or re.fullmatch(r"[的是为与及和或内]", candidate):
+            return
+        # 以情态动词开头的短语是规则句的动词部分，不是可作答的知识点
+        if re.match(r"^(?:应当|必须|不得|可以|有权|无权|须)", candidate):
+            return
+        candidates.append((candidate, priority))
+
+    # 高：引号/书名号内容、章节标题、数字期限组合
+    for quoted in re.findall(r"[“\"'『《]([^”\"'』》]{2,24})[”\"'』》]", sentence):
+        add(quoted, 4)
+    clean_title = _clean_title(title)
     if 2 <= len(clean_title) <= 24 and clean_title in sentence:
-        candidates.append(clean_title)
+        add(clean_title, 4)
+    for match in re.finditer(r"[0-9一二三四五六七八九十百]+(?:周岁|日内|个月|年以上|年以下|年以内|小时|日|年)", sentence):
+        add(match.group(0), 3)
+    # 中：判定词/情态动词后的具体短语
     marker_patterns = [
         r"[:：]\s*([^，。；:：]{2,32})",
         r"(?:为|是)\s*([^，。；:：]{2,20})",
         r"(?:是指|系指|包括|条件(?:是|为)|要件(?:是|为)|应当具备|须具备)\s*([^，。；:：]{2,28})",
         r"(?:应当|必须|不得|可以|有权|无权)\s*([^，。；:：]{2,22})",
     ]
-    generic = {
-        "以下条件", "下列条件", "具备以下条件", "具备下列条件", "有关规定", "法律规定",
-        "依法处理", "相应责任", "相关责任", "下列情形", "以下情形",
-    }
     for pattern in marker_patterns:
         for match in re.finditer(pattern, sentence):
-            candidate = match.group(1).strip(" ，,。.;；:：")
-            if 2 <= len(candidate) <= 10 and candidate not in generic:
-                candidates.append(candidate)
-    legal = re.findall(
+            add(match.group(1), 2, max_len=12)
+    # 中：法律术语（排除含判定虚词的半截碎片）
+    for legal in re.findall(
         r"[\u4e00-\u9fff]{2,12}(?:权|义务|责任|行为|制度|原则|要件|条件|效力|期限|期间|合同|主体|客体|关系|标准|时点|程序|救济)(?![\u4e00-\u9fff])",
         sentence,
-    )
-    # 排除“权人/权利人”处的半截截断（如“物权是权”），以及含判定虚词的碎片。
-    candidates.extend(
-        candidate
-        for candidate in legal
-        if len(candidate) <= 10 and not re.search(r"[是为与的之]", candidate)
-    )
-    # fallback 的“句尾 10 字”截取会把词切半（如“不动产以登记为生效要件”→
-    # “动产以登记为生效要件”），语义不可靠：只在没有任何结构化候选时兜底。
-    seen: list[str] = []
-    for candidate in candidates:
+    ):
+        if not re.search(r"[是为与的之]", legal):
+            add(legal, 2)
+
+    # 去重、去包含（保留高优先级）
+    seen: dict[str, int] = {}
+    for candidate, priority in candidates:
         if candidate in seen:
+            if priority > seen[candidate]:
+                seen[candidate] = priority
             continue
-        if any(candidate in other or other in candidate for other in seen):
+        overlap = next((other for other in seen if candidate in other or other in candidate), None)
+        if overlap:
+            if priority > seen[overlap]:
+                del seen[overlap]
+                seen[candidate] = priority
             continue
-        seen.append(candidate)
+        seen[candidate] = priority
     if not seen:
         fallback = _fallback_chinese(sentence)
         if fallback:
-            seen.append(fallback)
-    # 候选按在句子中的出现位置排序，保证“第 N 个空 == 第 N 个答案”一一对应。
-    seen.sort(key=lambda candidate: sentence.find(candidate))
-    return seen[:max_spans]
+            seen[fallback] = 1
+    # 按出现位置排序，保证“第 N 个空 == 第 N 个答案”一一对应；
+    # 相邻空位间距 ≥ 8 字符，避免把一句话挖成筛子
+    ordered = sorted(seen, key=lambda candidate: sentence.find(candidate))
+    spaced: list[str] = []
+    last_pos = -9
+    for candidate in ordered:
+        pos = sentence.find(candidate)
+        if pos - last_pos >= 8:
+            spaced.append(candidate)
+            last_pos = pos
+    return spaced[:max_spans]
 
 
 def _context_window(body: str, sentence: str, window: int = 140) -> str:
@@ -336,17 +426,25 @@ def _context_window(body: str, sentence: str, window: int = 140) -> str:
     return prefix + body[start:end].replace("\r", "").strip() + suffix
 
 
-_CLOZE_MARKERS = re.compile(r"是指|系指|包括|应当|必须|不得|须|条件|要件|标准|期限|分为|种类|有权|无权|可以|属于")
+_CLOZE_MARKERS = re.compile(r"是指|系指|即|属于|应当|必须|不得|须|可以|有权|无权|要件|条件|标准|期限|效力")
+# 分类/枚举句（“分为/种类/类型/包括A、B、C”）→ 闪卡“分为哪几类”，
+# 与 classify 模板配对；旧版把它们送进挖空池导致 flash 池拿不到素材。
+_CLASSIFY_MARKERS = re.compile(r"分为|种类|类型|分类|有(?:以下|下列)|包括[\u4e00-\u9fff]{0,6}[、，,]")
 _FLASHCARD_MARKERS = re.compile(r"为什么|因为|所以|区别|不同于|例外|除外|意义|作用|价值|目的|依据|根据|规定|但是|然而|如果|只要|才能")
 
 
 def _split_pools(sentences: list[str]) -> tuple[list[str], list[str]]:
-    """素材分流：判定词密集且无逻辑词 → 挖空池（提取知识点）；
-    含逻辑关系词 → 闪卡池（复述结构）。都命中或都没命中按长度分
-    （短句→提取型，长句→复述型）。避免同一句既挖空又闪卡。"""
+    """素材分流（互斥，一句只进一个池）：
+      定义句/规则句/要件列举句 → 挖空池（提取具体知识点）；
+      分类枚举句 → 闪卡池（“分为哪几类”整体恢复）；
+      逻辑关系句 → 闪卡池（复述结构）；
+      都未命中按长度分（短句→提取型，长句→复述型）。"""
     cloze_pool: list[str] = []
     flash_pool: list[str] = []
     for sentence in sentences:
+        if _CLASSIFY_MARKERS.search(sentence):
+            flash_pool.append(sentence)
+            continue
         cloze_hit = bool(_CLOZE_MARKERS.search(sentence))
         flash_hit = bool(_FLASHCARD_MARKERS.search(sentence))
         if cloze_hit and not flash_hit:
@@ -363,6 +461,20 @@ def _split_pools(sentences: list[str]) -> tuple[list[str], list[str]]:
 def retrieval_content_hash(item_type: str, prompt: str, answer: str, source_excerpt: str) -> str:
     payload = "\x1f".join((item_type, prompt, answer, source_excerpt))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _prompt_leaks_answer(prompt: str, answer: str) -> bool:
+    """题面不得包含答案原文：闪卡题面若完整包含答案（≥4 字去尾标点），
+    用户看题面即得答案，闭卷练习失效。历史版本曾把句子前半塞进题面导致泄漏，
+    这里做生成期防线（对未来模板回归同样生效）。"""
+    core = re.sub(r"[\s，,。.;；:：、…]+$", "", (answer or "").strip())
+    return len(core) >= 4 and core in prompt
+
+
+def _safe_flashcard_prompt(title: str, sentence: str) -> str:
+    """泄漏兜底：退化为“用自己的话复述”，只问主题，不贴原文。"""
+    topic = _flashcard_topic(sentence) or _clean_title(title) or "本部分内容"
+    return f"用自己的话复述：{topic}（注意规则、条件与例外）"
 
 
 def generate_retrieval_items(
@@ -403,6 +515,9 @@ def generate_retrieval_items(
             prompt = _flashcard_prompt(title, sentence, index)
             if prompt in seen_prompts:
                 continue
+            if _prompt_leaks_answer(prompt, sentence):
+                # 题面包含答案 = 闭卷失效：降级为“用自己的话复述”，不生成泄漏卡
+                prompt = _safe_flashcard_prompt(title, sentence)
             seen_prompts.add(prompt)
             excerpt = _context_window(body, sentence)
             drafts.append(
@@ -427,15 +542,21 @@ def generate_retrieval_items(
             spans = find_cloze_spans(sentence, title, max_spans=3)
             if not spans:
                 continue
+            # 词在句中多次出现时挖空有歧义，且未替换的残留会泄漏答案
+            # （如“被担保债权”出现两次：挖第一处、第二处留在题面即等于提示答案）。
+            # 跳过这类点位；全部不可用则放弃该句。
+            usable_spans = [span for span in spans if sentence.count(span) == 1]
+            if not usable_spans:
+                continue
             cloze_text = sentence
-            for span in spans:
+            for span in usable_spans:
                 if span in cloze_text:
                     cloze_text = cloze_text.replace(span, "____", 1)
             visible_context = re.sub(r"[_，,。.;；:：\s]", "", cloze_text)
             sentence_content = re.sub(r"[，,。.;；:：\s]", "", sentence)
-            if len(visible_context) < 4 or sum(len(s) for s in spans) / max(len(sentence_content), 1) > 0.7:
+            if len(visible_context) < 4 or sum(len(s) for s in usable_spans) / max(len(sentence_content), 1) > 0.7:
                 continue
-            answer = ANSWER_SEP.join(spans)
+            answer = ANSWER_SEP.join(usable_spans)
             pair = (cloze_text, answer)
             if pair in seen_pairs:
                 continue
@@ -465,11 +586,28 @@ def normalize_answer(text: str) -> str:
     return normalized
 
 
+# 挖空评分同义归一：只做语义等价且语境安全的一对一映射。
+# “必须/应当/须”是义务情态词，用户与标准答案互换时应判正确；
+# 不做“无/没有”“禁止/不得”等易误伤名词用法的映射。
+_SYNONYM_PAIRS = (
+    ("必须", "应当"),
+    ("须", "应当"),  # 需在“必须”之后替换，避免“必须”→“必应当”
+    ("不可以", "不得"),
+    ("只", "仅"),  # “只有/只需/只须”等义务限定
+)
+
+
+def _synonym_normalize(text: str) -> str:
+    for source, target in _SYNONYM_PAIRS:
+        text = text.replace(source, target)
+    return text
+
+
 def grade_cloze(response: str, expected: str) -> ClozeGrade:
     if ANSWER_SEP in expected:
         return _grade_multi_cloze(response, expected)
-    actual = normalize_answer(response)
-    target = normalize_answer(expected)
+    actual = _synonym_normalize(normalize_answer(response))
+    target = _synonym_normalize(normalize_answer(expected))
     if not actual:
         return ClozeGrade(0.0, "again", False, actual, target, "未填写答案。")
     if actual == target:

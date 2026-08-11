@@ -135,3 +135,113 @@ class TestSingleSpanCompat:
     def test_single_blank_cloze_grades(self):
         grade = grade_cloze("交付", "交付")
         assert grade.correct and grade.score == 100.0
+
+
+# ---- 本地算法优化回归（纯本地、零云端约束下的启发式最强形态）----
+
+from app.services.retrieval import (
+    _flashcard_prompt,
+    _sentence_score,
+    find_cloze_spans,
+    grade_cloze,
+    important_sentences,
+    _split_pools,
+)
+
+
+class TestSentenceScoring:
+    def test_rule_law_period_sentences_score_higher(self):
+        """规则句（情态+后果）、法条句、期限句应比普通叙述句更值得出题。"""
+        rule = "民事主体因同一行为应当承担民事责任、行政责任和刑事责任的，承担行政责任或者刑事责任不影响承担民事责任。"
+        law = "《民法典》第187条规定：民事主体因同一行为应当承担民事责任、行政责任和刑事责任的，承担行政责任或者刑事责任不影响承担民事责任。"
+        period = "相对人可以催告被代理人自收到通知之日起三十日内予以追认。"
+        plain = "本节理解难度不大，往年以判断题的形式考察过。"
+        assert _sentence_score(rule, 0) > _sentence_score(plain, 0)
+        assert _sentence_score(law, 0) > _sentence_score(plain, 0)
+        assert _sentence_score(period, 0) > _sentence_score(plain, 0)
+
+    def test_important_sentences_skip_watermark_toc_lines(self):
+        body = (
+            "第一节 民法的渊源\n"
+            "正版资料，请注意加入会员群 第15页 内部讲义，请勿盗印\n"
+            "实质渊源是指法律作为以暴力为后盾的公共规则体系，获得社会认可从而得以实施的信仰基础。"
+            "形式渊源是社会公认的法的创立方式，以及借以表明法律规范产生效力的表现形式。"
+            "习惯产生于长时间的反复实践，源于主体的自发性创造，属于所谓的自发性秩序。"
+            "民事习惯要成为民法的渊源，必须具备一定的条件。"
+        )
+        picked = important_sentences(body, limit=3)
+        assert picked
+        # 水印行会被剔除；标题行评分为负，正文句足够时不会占用名额
+        assert all("正版资料" not in s and "盗印" not in s and "会员群" not in s for s in picked), picked
+        assert all("第一节" not in s for s in picked), picked
+        assert any("实质渊源" in s for s in picked)
+
+
+class TestPoolSplitRefined:
+    def test_classify_sentence_goes_to_flashcard(self):
+        """分类枚举句（分为/种类/包括A、B、C）→ 闪卡池，与“分为哪几类”模板配对。"""
+        cloze_pool, flash_pool = _split_pools(["民事责任的形式分为停止侵害、排除妨碍、消除危险等类型。"])
+        assert not cloze_pool
+        assert flash_pool == ["民事责任的形式分为停止侵害、排除妨碍、消除危险等类型。"]
+
+    def test_definition_and_rule_sentences_stay_cloze(self):
+        cloze_pool, flash_pool = _split_pools([
+            "善意取得是指受让人善意取得动产或不动产所有权的制度。",
+            "处分人应当将标的物交付给受让人。",
+        ])
+        assert len(cloze_pool) == 2
+        assert not flash_pool
+
+
+class TestClozeSpanQuality:
+    def test_period_span_candidate(self):
+        spans = find_cloze_spans("相对人可以催告被代理人自收到通知之日起三十日内予以追认。", "追认")
+        assert any("三十日" in span for span in spans), spans
+
+    def test_modal_verb_leading_span_rejected(self):
+        """以情态动词开头的短语（应当/不得/须…）不是知识点，不得作为挖空答案。"""
+        spans = find_cloze_spans("处分人应当将标的物交付给受让人。", "交付")
+        for span in spans:
+            assert not span.startswith("应当"), span
+
+    def test_spans_not_overlapping_context_words(self):
+        spans = find_cloze_spans("2.民事习惯要成为民法的渊源，必须具备的条件 (1)须能证明有习惯的存在；", "民法的渊源")
+        for span in spans:
+            assert "条件 (1)" not in span, span
+            assert len(span) <= 16, span
+
+
+class TestFlashcardLawAndPeriodTemplates:
+    def test_law_article_template(self):
+        prompt = _flashcard_prompt("民法", "《民法典》第187条规定：民事主体因同一行为应当承担民事责任、行政责任和刑事责任的，承担行政责任或者刑事责任不影响承担民事责任。", 0)
+        assert "《民法典》第187条" in prompt and "规定" in prompt, prompt
+
+    def test_period_template(self):
+        prompt = _flashcard_prompt("追认", "相对人可以催告被代理人自收到通知之日起三十日内予以追认。", 0)
+        assert "期限" in prompt or "时间" in prompt, prompt
+
+
+class TestSynonymGrading:
+    def test_must_vs_shall_accepted(self):
+        """“必须”与“应当”语义等价，评分应按正确处理。"""
+        grade = grade_cloze("必须", "应当")
+        assert grade.correct and grade.rating == "good"
+
+    def test_synonym_mapping_does_not_break_exact(self):
+        grade = grade_cloze("应当", "应当")
+        assert grade.score == 100.0
+
+
+class TestSpanUniqueness:
+    def test_duplicated_span_skipped_not_leaking(self):
+        """词在句中多次出现时不得挖空：残留的第二个词会泄漏答案（如“被担保债权”）。"""
+        from app.services.retrieval import generate_retrieval_items
+        body = "一般理论认为，被担保债权应是金钱债权，但非金钱债权在不能实现时，只要能转化为金钱债权，也可以作为被担保债权。"
+        drafts = generate_retrieval_items(title="担保", body=body, item_types=["cloze"], max_per_type=2)
+        for draft in drafts:
+            for part in draft.answer.split(ANSWER_SEP):
+                assert draft.prompt.count(part) == 0, f"残留泄漏: {part} in {draft.prompt}"
+
+    def test_weak_topic_overview_rejected(self):
+        from app.services.retrieval import _flashcard_topic
+        assert _flashcard_topic("概述 1.类型一代理人在代理权限范围内为被代理人计算。") is None
