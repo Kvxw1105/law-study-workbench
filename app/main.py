@@ -51,6 +51,7 @@ from app.services.method_packs import (
     select_method_pack,
 )
 from app.services.scheduler import due_at_after, review_plan
+from app.services.pdf_parser import search_text_rects
 from app.services.retrieval import (
     generate_retrieval_items,
     grade_cloze,
@@ -2231,12 +2232,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         for page_index in range(document.page_count):
             page = document[page_index]
             for candidate in candidates:
-                rects = page.search_for(candidate)
+                rects = search_text_rects(page, candidate)
                 if rects:
                     result = {
                         "source_id": source_id,
                         "page": page_index + 1,
-                        "rects": [{"x0": r.x0, "y0": r.y0, "x1": r.x1, "y1": r.y1} for r in rects[:8]],
+                        "rects": rects[:8],
                         "matched": candidate[:80],
                     }
                     _locate_cache[cache_key] = result
